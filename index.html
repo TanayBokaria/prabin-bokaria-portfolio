@@ -3868,8 +3868,9 @@ async function commitABImport(rows){
     let sheetsOk = true;
     let sheetsMsg = '';
     if(sheetsConnected){
-      sheetsOk = await saveABHoldingsToSheets(abData, asOf);
-      if(!sheetsOk) sheetsMsg = 'Could not write to Google Sheets — data is saved in memory only. Reconnect Sheets and re-import to persist.';
+      const result = await saveABHoldingsToSheets(abData, asOf);
+      sheetsOk = result.ok;
+      if(!sheetsOk) sheetsMsg = result.reason || 'Could not write to Google Sheets — data is saved in memory only. Reconnect Sheets and re-import to persist.';
     } else {
       sheetsOk = false;
       sheetsMsg = 'Google Sheets is not connected — data is saved in memory only this session. Connect Sheets to persist.';
@@ -3934,11 +3935,33 @@ async function commitABImport(rows){
 // ── Save all AB holdings to the ab_holdings Sheet tab ────────────────────
 // Columns: investor | userId | instrument | qty | avgPrice | invested | currentValue | pnl | ltp | asOf | source
 async function saveABHoldingsToSheets(rows, asOf){
-  if(!sheetsConfig?.accessToken || !sheetsConfig?.sheetId) return false;
+  if(!sheetsConfig?.accessToken || !sheetsConfig?.sheetId) return {ok:false, reason:'Not connected to Sheets'};
   const token = sheetsConfig.accessToken;
   const sheetId = sheetsConfig.sheetId;
   try{
-    // Clear and rewrite the entire tab to avoid duplicates
+    // ── Step 1: Ensure ab_holdings tab exists — create it if missing ─────
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties.title`;
+    const metaR = await fetchWithTimeout(metaUrl, {headers:{Authorization:`Bearer ${token}`}});
+    if(metaR.status === 401){
+      sheetsConnected = false;
+      updateSheetsPill('error','Sheets: Session expired');
+      return {ok:false, reason:'Google session expired — please reconnect Sheets and re-import.'};
+    }
+    if(metaR.ok){
+      const meta = await metaR.json();
+      const tabs = (meta.sheets||[]).map(s=>s.properties.title);
+      if(!tabs.includes('ab_holdings')){
+        // Tab is missing — add it
+        const addUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`;
+        await fetchWithTimeout(addUrl,{
+          method:'POST',
+          headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+          body: JSON.stringify({requests:[{addSheet:{properties:{title:'ab_holdings'}}}]})
+        });
+      }
+    }
+
+    // ── Step 2: Clear and rewrite the tab ────────────────────────────────
     const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/ab_holdings!A1:Z2000:clear`;
     await fetchWithTimeout(clearUrl, {method:'POST', headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}});
 
@@ -3954,11 +3977,15 @@ async function saveABHoldingsToSheets(rows, asOf){
       headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
       body: JSON.stringify({values:[...header,...dataRows]})
     });
-    if(!wr.ok) throw new Error(`Sheets write failed: ${wr.status}`);
-    return true;
+    if(!wr.ok){
+      const errBody = await wr.json().catch(()=>({}));
+      const errMsg = errBody?.error?.message || `HTTP ${wr.status}`;
+      return {ok:false, reason:`Sheets write failed: ${errMsg}`};
+    }
+    return {ok:true};
   }catch(e){
     console.error('saveABHoldingsToSheets error:', e);
-    return false;
+    return {ok:false, reason: e.message||String(e)};
   }
 }
 
