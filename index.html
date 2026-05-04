@@ -3533,8 +3533,7 @@ async function handleABUpload(event){
     if(existing) existing.remove();
     const modal = document.createElement('div');
     modal.id = 'abReviewModal';
-    modal.className = 'modal-overlay';
-    modal.style.display = 'flex';
+    modal.className = 'modal-overlay visible';
     const errRows = parseErrors.map(e=>
       `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">
         <span style="color:var(--text);font-weight:500">${sanitize(e.file)}</span><br>
@@ -3790,8 +3789,7 @@ function showABReviewModal(rows, parseErrors=[]){
   if(modal) modal.remove();
   modal = document.createElement('div');
   modal.id = 'abReviewModal';
-  modal.className = 'modal-overlay';
-  modal.style.display = 'flex';
+  modal.className = 'modal-overlay visible';
   modal.innerHTML = `
     <div class="modal" style="width:600px;max-height:85vh;overflow-y:auto">
       <h2>Import AB Holdings — Review</h2>
