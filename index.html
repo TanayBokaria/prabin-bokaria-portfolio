@@ -6,6 +6,7 @@
 <title>Prabin Bokaria Family Portfolio</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
   :root {
     --bg:#0d0f14;--surface:#13161e;--surface2:#1a1e2a;--border:#232839;
@@ -308,6 +309,10 @@
       Import AB Holdings
     </button>
     <input type="file" id="abFileInput" accept=".csv,.xls,.xlsx" style="display:none" onchange="handleABUpload(event)">
+    <button class="refresh-btn" id="exportExcelBtn" onclick="exportToExcel()" title="Export current portfolio to Excel in Priya's format" style="background:var(--surface2);border:1px solid rgba(92,184,138,0.5);color:var(--green)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export Excel
+    </button>
     <button class="refresh-btn" id="refreshBtn" onclick="refreshNAVs()">
       <svg id="refreshIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
       Refresh NAVs
@@ -851,8 +856,8 @@ function sanitize(str){
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 }
 function fmtDays(d){if(d===null)return'—';if(d>=365){const y=Math.floor(d/365),m=Math.floor((d%365)/30);return y+'y'+(m>0?' '+m+'m':'');}if(d>=30)return Math.floor(d/30)+'m';return d+'d';}
-function getTagClass(h){if(h.type==='PMS'||h.type==='AIF')return'tag-aif';if(h.category==='Equity')return'tag-equity';if(h.category.includes('Debt'))return'tag-debt';return'tag-hybrid';}
-function getTypeLabel(h){return h.type==='PMS'?'PMS':h.type==='AIF'?'AIF':h.category;}
+function getTagClass(h){if(h.type==='PMS'||h.type==='AIF')return'tag-aif';if(!h.category)return'tag-hybrid';if(h.category==='Equity')return'tag-equity';if(h.category.includes('Debt'))return'tag-debt';return'tag-hybrid';}
+function getTypeLabel(h){return h.type==='PMS'?'PMS':h.type==='AIF'?'AIF':(h.category||'Equity');}
 function shortName(n){return n.replace(' Bokaria','').replace(' HUF',' HUF');}
 
 // ═══════════════════════════════════
@@ -2116,6 +2121,214 @@ function filterTable(member,btnEl){
   renderTable();renderMemberCards();
 }
 
+// ═══════════════════════════════════════════════════════
+// EXPORT TO EXCEL — Priya's exact format (21 columns A–U)
+// ═══════════════════════════════════════════════════════
+async function exportToExcel(){
+  const btn = document.getElementById('exportExcelBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Exporting...'; }
+  try {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Bokaria Portfolio Dashboard';
+    wb.created = new Date();
+
+    // ── Determine which investors to export (respect active filter) ──
+    const members = activeFilter === 'all'
+      ? [...new Set(portfolioData.map(h=>h.investor))]
+      : [activeFilter];
+
+    for(const member of members){
+      const rows = portfolioData.filter(h=>h.investor===member);
+      if(!rows.length) continue;
+
+      // Sheet name: first name only, max 31 chars (Excel limit)
+      // Build unique sheet name: first name + HUF if applicable, max 31 chars
+      const parts = member.split(' ');
+      const isHUF = member.includes('HUF');
+      const sheetName = (parts[0] + (isHUF ? '_HUF' : '')).substring(0,31);
+      const ws = wb.addWorksheet(sheetName);
+
+      // ── Column widths ──
+      ws.columns = [
+        {width:6},   // A Sl#
+        {width:22},  // B Name of the Investor
+        {width:22},  // C Account No./Folio No.
+        {width:50},  // D Details of Investment
+        {width:8},   // E Bank
+        {width:12},  // F Purchase Date
+        {width:14},  // G Units
+        {width:14},  // H NAV on Purchase
+        {width:16},  // I Investment Cost
+        {width:14},  // J Current Cost (blank)
+        {width:14},  // K Current Nav
+        {width:16},  // L Current Value
+        {width:16},  // M Gain & Loss
+        {width:14},  // N No of Holding Days
+        {width:12},  // O Flat Yield%
+        {width:14},  // P Annualised Yield%
+        {width:12},  // Q CAGR%
+        {width:14},  // R Financial Advisor
+        {width:12},  // S Type
+        {width:14},  // T Redemption Date (blank)
+        {width:16},  // U Redemption Value (blank)
+      ];
+
+      // ── Header row ──
+      const headers = [
+        'Sl#','Name of the Investor','Account No./ Folio No.','Details of Investment',
+        'Bank','Purchase Date','Units ','NAV on Purchase','Investment Cost','Current Cost',
+        'NAV-as on','Current Value','Gain & Loss','No of Holding Days',
+        'Flat  Yield%','Anualised Yield (%) Excel','CAGR (%)-Report',
+        'Financial Advisor',' Category','Redemption Date','Redemption Value'
+      ];
+      const headerRow = ws.addRow(headers);
+      headerRow.eachCell((cell, colNum) => {
+        cell.font = { bold: true, size: 10, name: 'Calibri' };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        // Two-tone blue: A–J = #99CCFF, K–U = #C8E3FC
+        cell.fill = {
+          type: 'pattern', pattern: 'solid',
+          fgColor: { argb: colNum <= 10 ? 'FF99CCFF' : 'FFC8E3FC' }
+        };
+        cell.border = {
+          top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}
+        };
+      });
+      headerRow.height = 36;
+
+      // ── Data rows ──
+      const today = new Date();
+      rows.forEach((h, idx) => {
+        const purchaseDate = h.purchaseDate ? new Date(h.purchaseDate) : null;
+        const holdingDays = purchaseDate
+          ? Math.round((today - purchaseDate) / (1000*60*60*24))
+          : null;
+        const invested = h.invested || 0;
+        const currentValue = h.currentValue || 0;
+        const gain = currentValue - invested;
+        const flatYield = invested > 0 ? gain / invested : 0;
+        const annYield = (holdingDays && holdingDays > 0)
+          ? flatYield / (holdingDays / 365) : 0;
+        const cagr = (invested > 0 && holdingDays > 0)
+          ? Math.pow(currentValue / invested, 365 / holdingDays) - 1 : 0;
+
+        const rowData = [
+          h.siNum || SI_MAP[h.folio] || h.id, // A Sl#
+          h.investor,                     // B Name of the Investor
+          h.folio || '',                  // C Account No./Folio No.
+          h.fund || '',                   // D Details of Investment
+          'Yes',                          // E Bank
+          purchaseDate || '',             // F Purchase Date
+          h.units != null ? h.units : '', // G Units
+          h.navCost != null ? h.navCost : '', // H NAV on Purchase
+          invested,                       // I Investment Cost
+          '',                             // J Current Cost (blank)
+          h.currentNav != null ? h.currentNav : '', // K Current Nav
+          currentValue,                   // L Current Value
+          gain,                           // M Gain & Loss
+          holdingDays || '',              // N No of Holding Days
+          flatYield / 100,                // O Flat Yield% (decimal for Excel 0% format)
+          annYield !== null ? annYield / 100 : '', // P Annualised Yield% (decimal)
+          cagr,                           // Q CAGR% (already decimal from Math.pow)
+          'Direct',                       // R Financial Advisor
+          h.category || h.type || '',     // S Category/Type
+          '',                             // T Redemption Date (blank)
+          '',                             // U Redemption Value (blank)
+        ];
+
+        const dataRow = ws.addRow(rowData);
+
+        // Apply formatting cell by cell
+        dataRow.eachCell({includeEmpty:true}, (cell, colNum) => {
+          cell.font = { bold: true, size: 10, name: 'Calibri' };
+          cell.border = {
+            top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}
+          };
+
+          switch(colNum){
+            case 1:  // Sl# — integer, center
+              cell.alignment = {horizontal:'center',vertical:'middle'};
+              cell.numFmt = '0';
+              break;
+            case 2:  // Name — left
+            case 3:  // Folio — left
+            case 4:  // Fund name — left
+              cell.alignment = {horizontal:'left',vertical:'middle',wrapText:true};
+              break;
+            case 5:  // Bank — center
+              cell.alignment = {horizontal:'center',vertical:'middle'};
+              break;
+            case 6:  // Purchase Date — mm-dd-yy, center
+              if(purchaseDate){ cell.numFmt = 'mm-dd-yy'; }
+              cell.alignment = {horizontal:'center',vertical:'middle'};
+              break;
+            case 7:  // Units — 2dp, center
+            case 8:  // NAV on Purchase — 2dp, center
+              cell.numFmt = '#,##0.00';
+              cell.alignment = {horizontal:'center',vertical:'middle'};
+              break;
+            case 9:  // Investment Cost — 0dp, right
+            case 12: // Current Value — 0dp, right
+            case 13: // Gain & Loss — 0dp, right
+              cell.numFmt = '#,##0';
+              cell.alignment = {horizontal:'right',vertical:'middle'};
+              break;
+            case 11: // Current Nav — 3dp, right
+              cell.numFmt = '#,##0.000';
+              cell.alignment = {horizontal:'right',vertical:'middle'};
+              break;
+            case 14: // Holding Days — integer, right
+              cell.numFmt = '0';
+              cell.alignment = {horizontal:'right',vertical:'middle'};
+              break;
+            case 15: // Flat Yield% — center
+            case 16: // Annualised Yield% — center
+            case 17: // CAGR% — center
+              cell.numFmt = '0%';
+              cell.alignment = {horizontal:'center',vertical:'middle'};
+              break;
+            case 18: // Financial Advisor — left
+            case 19: // Category — left
+              cell.alignment = {horizontal:'left',vertical:'middle'};
+              break;
+            default:
+              cell.alignment = {horizontal:'center',vertical:'middle'};
+          }
+        });
+      });
+
+      // ── Freeze top row ──
+      ws.views = [{state:'frozen', ySplit:1}];
+    }
+
+    // ── Build filename: FamilyName_Report_DD-MM-YYYY.xlsx ──
+    const today2 = new Date();
+    const dd = String(today2.getDate()).padStart(2,'0');
+    const mm = String(today2.getMonth()+1).padStart(2,'0');
+    const yyyy = today2.getFullYear();
+    // Get family name from page title
+    const titleEl = document.querySelector('.header-left h1');
+    const familyPrefix = titleEl ? titleEl.textContent.split(' ')[0] : 'Portfolio';
+    const filename = `${familyPrefix}_MF_Report_${dd}_${mm}_${yyyy}.xlsx`;
+
+    // ── Trigger download ──
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+
+  } catch(e) {
+    console.error('Export failed:', e);
+    alert('Export failed: ' + (e.message || String(e)));
+  } finally {
+    if(btn){ btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export Excel'; }
+  }
+}
+
 // ═══════════════════════════════════
 // INIT
 // ═══════════════════════════════════
@@ -2333,6 +2546,7 @@ function showFreshDetail(){
 // ═══════════════════════════════════
 
 async function handleSOAUpload(event){
+  event.target.value = ''; // Reset input so same file can be re-uploaded
   const files = Array.from(event.target.files);
   if(!files.length) return;
 
@@ -3480,7 +3694,8 @@ let AB_USER_MAP = {
   // Additional entries loaded dynamically from Google Sheet config tab
   '1014836': 'Prabin Bokaria',
   '749036':  'Ritu Bokaria',
-  // Prabin Bokaria HUF, Preksha, Pranjul UserIds: add to Sheet config as ab_user_USERID
+  '1092143': 'Pranjul Bokaria',
+  // Prabin Bokaria HUF and Preksha Bokaria UserIds: add to Sheet config as ab_user_USERID
 };
 
 // Load AB_USER_MAP from Sheet config tab — looks for rows where column A starts with "ab_user_"
