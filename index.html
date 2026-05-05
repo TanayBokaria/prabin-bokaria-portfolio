@@ -2213,10 +2213,10 @@ async function exportToExcel(){
           ? Math.pow(currentValue / invested, 365 / holdingDays) - 1 : 0;
 
         const rowData = [
-          h.siNum || SI_MAP[h.folio] || h.id, // A Sl#
+          h.siNum || (typeof SI_MAP !== 'undefined' && SI_MAP[h.folio]) || h.id, // A Sl#
           h.investor,                     // B Name of the Investor
           h.folio || '',                  // C Account No./Folio No.
-          h.fund || '',                   // D Details of Investment
+          h.originalName || h.fund || '', // D Details of Investment
           'Yes',                          // E Bank
           purchaseDate || '',             // F Purchase Date
           h.units != null ? h.units : '', // G Units
@@ -2227,8 +2227,8 @@ async function exportToExcel(){
           currentValue,                   // L Current Value
           gain,                           // M Gain & Loss
           holdingDays || '',              // N No of Holding Days
-          flatYield / 100,                // O Flat Yield% (decimal for Excel 0% format)
-          annYield !== null ? annYield / 100 : '', // P Annualised Yield% (decimal)
+          flatYield,                      // O Flat Yield% (decimal ratio, e.g. 1.778 = 177.8%)
+          annYield !== null ? annYield : '', // P Annualised Yield% (decimal)
           cagr,                           // Q CAGR% (already decimal from Math.pow)
           'Direct',                       // R Financial Advisor
           h.category || h.type || '',     // S Category/Type
