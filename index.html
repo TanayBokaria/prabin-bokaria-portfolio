@@ -241,6 +241,22 @@
     .members-grid{grid-template-columns:1fr 1fr;}
     .stat-value{font-size:16px;}
   }
+
+  /* ── STALENESS PANEL (Feature 2) ── */
+  .stale-panel{background:rgba(232,168,56,0.08);border:1px solid rgba(232,168,56,0.28);border-radius:12px;padding:14px 18px;margin-bottom:18px;}
+  .stale-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .stale-title{font-size:11px;font-weight:600;color:var(--accent);font-family:var(--font-mono,monospace);text-transform:uppercase;letter-spacing:0.6px;}
+  .stale-count{font-size:10px;background:rgba(232,168,56,0.15);border:1px solid rgba(232,168,56,0.4);color:var(--accent);padding:2px 8px;border-radius:10px;font-family:var(--font-mono,monospace);}
+  .stale-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(232,168,56,0.12);font-size:12px;}
+  .stale-row:last-child{border-bottom:none;}
+  .stale-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:2px;}
+  .stale-desc{flex:1;color:var(--text);line-height:1.4;}
+  .stale-cta{font-size:11px;color:var(--accent);font-family:var(--font-mono,monospace);cursor:pointer;text-decoration:underline;white-space:nowrap;flex-shrink:0;border:none;background:none;padding:0;}
+  .stale-cta:hover{color:var(--text);}
+  /* ── DELTA CHIPS (Feature 5) ── */
+  .delta-chip{font-size:10px;font-family:var(--font-mono,monospace);display:block;margin-top:2px;line-height:1.3;}
+  .delta-chip.up{color:var(--green);}
+  .delta-chip.down{color:var(--red);}
 </style>
 </head>
 <body>
@@ -326,6 +342,16 @@
     <div class="stat-card teal"><div class="stat-label">Current Value</div><div class="stat-value" id="totalCurrent">—</div><div class="stat-sub" id="totalGainAmt">—</div></div>
     <div class="stat-card green"><div class="stat-label">Overall Return</div><div class="stat-value" id="totalReturn">—</div><div class="stat-sub" style="color:var(--text-muted)">Absolute since inception</div></div>
     <div class="stat-card purple" style="cursor:pointer" onclick="showFreshDetail()" title="Click to see details"><div class="stat-label">Data Freshness</div><div class="stat-value" id="navCoverage">—</div><div class="stat-sub" id="sheetsSyncStatus" style="color:var(--text-muted)">Hit Refresh NAVs</div></div>
+  </div>
+
+  
+  <!-- STALENESS ALERT PANEL (Feature 2) -->
+  <div id="stalenessPanel" class="stale-panel" style="display:none">
+    <div class="stale-header">
+      <span class="stale-title">⏰ Data Freshness Check</span>
+      <span class="stale-count" id="staleCount">—</span>
+    </div>
+    <div id="stalenessList"></div>
   </div>
 
   <div class="members-grid" id="memberCards"></div>
@@ -833,10 +859,18 @@ const _deletedIds = JSON.parse(localStorage.getItem('bokaria_prabin_deleted')||'
 let portfolioData = PORTFOLIO.map(h=>({...h})).filter(h=>!_deletedIds.includes(h.id));
 let navFetchFailed = [];   // codes that failed during last refresh
 let navRenamed = [];       // {id, oldName, newName} updated during last refresh
-let navApiDown = false;    // true when circuit breaker trips (API outage, not bad codes)
+let navApiDown = false;    // true when circuit breaker trips (both sources down)
+let navFromFallback = [];  // codes that succeeded via mfdata.in fallback
+let mfdataApiDown = false; // set true if mfdata.in times out once this session — skip it
+let lastSyncMsg = '';      // last message set by loadFromSheets — preserved across renderAll
 let navCache = {}, lastRefreshed = new Date(), activeFilter = 'all';
 let sheetsConfig = null, sheetsConnected = false;
 let memberChartInst = null, categoryChartInst = null;
+// Feature 2 — Staleness thresholds (days)
+const STALE_PMS_DAYS = 30;
+const STALE_AB_DAYS  = 7;
+// Feature 5 — Delta baseline: {holdingId: previousValue} captured before each refresh/save
+let deltaBaseline = null;
 
 // ═══════════════════════════════════
 // HELPERS
@@ -860,6 +894,77 @@ function fmtDays(d){if(d===null)return'—';if(d>=365){const y=Math.floor(d/365)
 function getTagClass(h){if(h.type==='PMS'||h.type==='AIF')return'tag-aif';if(!h.category)return'tag-hybrid';if(h.category==='Equity')return'tag-equity';if(h.category.includes('Debt'))return'tag-debt';return'tag-hybrid';}
 function getTypeLabel(h){return h.type==='PMS'?'PMS':h.type==='AIF'?'AIF':(h.category||'Equity');}
 function shortName(n){return n.replace(' Bokaria','').replace(' HUF',' HUF');}
+
+// ── Staleness helpers (Feature 2) ────────────────────────────────────────
+// Parse soaDate string to Date — handles "02-Apr-2026", "2026-04-02", "02/04/2026"
+function parseSoaDate(str){
+  if(!str) return null;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str)) return new Date(str+'T00:00:00');
+  const MMAP={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+  const m1=str.match(/^(\d{2})-([A-Za-z]{3})-(\d{4})$/);
+  if(m1) return new Date(`${m1[3]}-${MMAP[m1[2].toLowerCase()]||'01'}-${m1[1]}T00:00:00`);
+  const m2=str.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
+  if(m2) return new Date(`${m2[3]}-${m2[2]}-${m2[1]}T00:00:00`);
+  return null;
+}
+
+function renderStalenessPanel(){
+  const panel=document.getElementById('stalenessPanel');
+  const listEl=document.getElementById('stalenessList');
+  const countEl=document.getElementById('staleCount');
+  if(!panel||!listEl||!countEl) return;
+
+  const now=Date.now();
+  const staleItems=[];
+
+  // PMS/AIF: flag if soaDate missing or older than STALE_PMS_DAYS
+  portfolioData.filter(h=>h.type==='PMS'||h.type==='AIF').forEach(h=>{
+    const d=parseSoaDate(h.soaDate);
+    const days=d&&!isNaN(d)?Math.floor((now-d.getTime())/(1000*60*60*24)):null;
+    if(days===null||days>STALE_PMS_DAYS){
+      staleItems.push({type:'pms',id:h.id,name:h.originalName||h.fund||'Unknown',investor:shortName(h.investor),meta:MEMBER_META[h.investor],days});
+    }
+  });
+
+  // AB Holdings: flag if last imported asOf date > STALE_AB_DAYS old
+  if(abData.length>0){
+    const asOf=abData[0]?.asOf;
+    const d=asOf?new Date(asOf+'T00:00:00'):null;
+    const days=d&&!isNaN(d)?Math.floor((now-d.getTime())/(1000*60*60*24)):null;
+    if(days!==null&&days>STALE_AB_DAYS) staleItems.push({type:'ab',days});
+  }
+
+  if(!staleItems.length){panel.style.display='none';return;}
+  panel.style.display='block';
+  countEl.textContent=staleItems.length+(staleItems.length===1?' item':' items')+' need attention';
+
+  listEl.innerHTML=staleItems.map(item=>{
+    if(item.type==='ab'){
+      return `<div class="stale-row">
+        <span class="stale-dot"></span>
+        <span class="stale-desc"><strong>AB Holdings</strong> — last imported <strong>${item.days}d ago</strong>. Upload the latest AB export to refresh equity data.</span>
+        <button class="stale-cta" onclick="document.getElementById('abFileInput').click()">Re-import →</button>
+      </div>`;
+    }
+    const color=item.meta?.color||'var(--accent)';
+    const daysStr=item.days!==null?`${item.days}d ago`:'date unknown';
+    return `<div class="stale-row">
+      <span class="stale-dot" style="background:${color}"></span>
+      <span class="stale-desc">
+        <strong>${sanitize(item.name)}</strong>
+        <span style="color:var(--text-muted)"> · ${sanitize(item.investor)}</span>
+        — as of <strong>${daysStr}</strong>. Update in the PMS / AIF panel below.
+      </span>
+      <button class="stale-cta" onclick="document.getElementById('manualUpdateList').scrollIntoView({behavior:'smooth'})">Update ↓</button>
+    </div>`;
+  }).join('');
+}
+
+// ── Delta baseline (Feature 5) ────────────────────────────────────────────
+function captureDeltaBaseline(){
+  deltaBaseline={};
+  portfolioData.forEach(h=>{deltaBaseline[h.id]=h.currentValue||0;});
+}
 
 // ═══════════════════════════════════
 // TOTALS
@@ -923,7 +1028,7 @@ function fetchWithTimeout(url, options={}, ms=12000){
 }
 
 async function fetchSingleNAV(code){
-  // Two attempts for transient HTTP errors (429/502/503/504); timeouts bail immediately
+  // ── Primary: mfapi.in ──
   const RETRYABLE=new Set([429,502,503,504]);
   for(let attempt=0;attempt<2;attempt++){
    try{
@@ -932,11 +1037,11 @@ async function fetchSingleNAV(code){
       if(attempt===0) await new Promise(x=>setTimeout(x,1500));
       continue; // retry once
     }
-    if(!r.ok)return null;
+    if(!r.ok) break; // non-retryable error → try fallback
     const d=await r.json();
-    if(!d.data?.length)return null;
+    if(!d.data?.length) break;
     const result={nav:parseFloat(d.data[0].nav),date:d.data[0].date,schemeName:d.meta?.scheme_name||''};
-    // Inline name-change detection — no separate hygiene pass needed
+    // Inline name-change detection
     if(result.schemeName){
       portfolioData.filter(h=>String(h.schemeCode)===String(code)).forEach(h=>{
         if(result.schemeName !== (h.originalName||h.fund||'')){
@@ -948,18 +1053,34 @@ async function fetchSingleNAV(code){
         }
       });
     }
-    return result;
+    return result; // success from mfapi.in
   }catch(e){
-    return null; // timeout / network error — don't retry, treat as API down
+    break; // timeout/network error → go straight to fallback
   }
   } // end retry loop
-  return null;
+
+  // ── Fallback: mfdata.in (different infrastructure, same AMFI scheme codes) ──
+  if(!mfdataApiDown){
+    try{
+      const r2=await fetchWithTimeout(`https://mfdata.in/api/v1/schemes/${code}`,{},3000);
+      if(r2.ok){
+        const d2=await r2.json();
+        if(d2.status==='success'&&d2.data?.nav!=null){
+          return {nav:parseFloat(d2.data.nav),date:d2.data.nav_date||'',schemeName:d2.data.name||'',source:'mfdata.in'};
+        }
+      }
+    }catch(e){ mfdataApiDown=true; } // timed out — skip for rest of session
+  }
+
+  return null; // both sources failed
 }
 async function refreshNAVs(){
   const btn=document.getElementById('refreshBtn'),icon=document.getElementById('refreshIcon');
   const ov=document.getElementById('loadingOverlay'),st=document.getElementById('loadingStatus');
   btn.disabled=true;icon.classList.add('spin');ov.classList.add('visible');
   try{
+  // Capture baseline before any updates — for delta display (Feature 5)
+  captureDeltaBaseline();
 
   // 1. Re-sync from Google Sheets first (picks up latest PMS/AIF values and new holdings)
   if(sheetsConnected){
@@ -974,33 +1095,38 @@ async function refreshNAVs(){
   await fetchUSDINR();
 
   // 3. Fetch MF NAVs
-  navFetchFailed = []; navRenamed = []; navApiDown = false; // reset tracking
+  navFetchFailed = []; navRenamed = []; navApiDown = false; navFromFallback = []; mfdataApiDown = false; // reset tracking
   document.getElementById('loadingText').textContent='Fetching MF NAVs';
   const codes=[...new Set(portfolioData.filter(h=>h.schemeCode).map(h=>h.schemeCode))];
-  let consecutiveFails=0;
-  for(const code of codes){
-    if(navApiDown){ navFetchFailed.push(code); continue; } // circuit open — skip remaining
-    st.textContent='Fetching '+(MF_NAMES[code]||code)+'...';
-    const r=await fetchSingleNAV(code);
-    if(r){
-      consecutiveFails=0;
-      navCache[code]=r;
-      portfolioData.forEach(h=>{
-        if(String(h.schemeCode)===String(code)){
-          h.currentNav=r.nav;
-          h.navDate=r.date;
-          if(h.type==='MF' && h.units && h.units>0) h.currentValue=h.units*r.nav;
-        }
-      });
-    } else {
-      navFetchFailed.push(code);
-      consecutiveFails++;
-      if(consecutiveFails>=3){
-        navApiDown=true; // circuit open — API is down, not scheme code issue
-        st.textContent='mfapi.in API unavailable — stopping NAV fetch';
+
+  // Parallel batch fetching — faster and more resilient to intermittent API outages
+  const BATCH=6;
+  st.textContent='Fetching NAVs ('+codes.length+' funds)...';
+  for(let i=0;i<codes.length;i+=BATCH){
+    const batch=codes.slice(i,i+BATCH);
+    const batchResults=await Promise.all(batch.map(code=>fetchSingleNAV(code).then(r=>({code,r}))));
+    batchResults.forEach(({code,r})=>{
+      if(r){
+        if(r.source==='mfdata.in') navFromFallback.push(code);
+        navCache[code]=r;
+        portfolioData.forEach(h=>{
+          if(String(h.schemeCode)===String(code)){
+            h.currentNav=r.nav;
+            h.navDate=r.date;
+            if(h.type==='MF'&&h.units&&h.units>0) h.currentValue=h.units*r.nav;
+          }
+        });
+      } else {
+        navFetchFailed.push(code);
       }
-    }
-    if(!navApiDown) await new Promise(x=>setTimeout(x,400));
+    });
+    st.textContent='Fetched '+(i+BATCH)+' / '+codes.length+'...';
+    if(i+BATCH<codes.length) await new Promise(x=>setTimeout(x,200));
+  }
+  // Circuit breaker: if >60% failed, flag API as down
+  if(navFetchFailed.length>codes.length*0.6){
+    navApiDown=true;
+    st.textContent='NAV sources unavailable — showing last saved values';
   }
 
   // 3. Fetch NYSE stock prices
@@ -1025,8 +1151,9 @@ async function refreshNAVs(){
     localStorage.setItem(NAV_CACHE_KEY,JSON.stringify({ts:Date.now(),navs:_navSnap}));
   }catch(e){}
 
-  // 4. Write full portfolio snapshot to Sheets
-  if(sheetsConnected){
+  // 4. Write full portfolio snapshot to Sheets — only if NAVs actually loaded (don't overwrite good data with failed-refresh values)
+  const navSuccessCount=codes.length-navFetchFailed.length;
+  if(sheetsConnected && navSuccessCount>0){
     document.getElementById('loadingText').textContent='Saving to Sheets';
     st.textContent='Saving snapshot to Google Sheets...';
     await writePortfolioSnapshot();
@@ -1543,10 +1670,56 @@ async function loadFromSheets(){
     // Load AB equity holdings from ab_holdings tab
     await loadABHoldingsFromSheets();
 
+    // Restore last NAV snapshot for MF holdings (so page reload shows saved values, not hardcoded baseline)
+    let navRestored = 0;
+    try{
+      const snapUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/portfolio_snapshot!A2:Q5000?valueRenderOption=UNFORMATTED_VALUE`;
+      const snapR=await fetchWithTimeout(snapUrl,{headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
+      if(snapR.ok){
+        const snapData=await snapR.json();
+        const snapRows=snapData.values||[];
+        snapRows.forEach(row=>{
+          if(!row||row.length<9)return;
+          const type=String(row[4]||'').trim();
+          if(type==='MF'){
+            // Restore MF holding: currentValue, currentNav, navDate
+            const folio=String(row[6]||'').trim();
+            const schemeCode=String(row[16]||'').trim();
+            const currentVal=parseFloat(String(row[8]||'').replace(/[₹,\s]/g,''));
+            const nav=parseFloat(String(row[12]||'').replace(/[₹,\s]/g,''));
+            const navDate=String(row[13]||'').trim();
+            let h=null;
+            if(folio) h=portfolioData.find(x=>x.folio===folio&&x.type==='MF');
+            if(!h&&schemeCode) h=portfolioData.find(x=>String(x.schemeCode)===schemeCode&&x.type==='MF');
+            if(h){
+              if(!isNaN(currentVal)&&currentVal>0) h.currentValue=currentVal;
+              if(!isNaN(nav)&&nav>0) h.currentNav=nav;
+              if(navDate) h.navDate=navDate;
+              navRestored++;
+            }
+          } else if(type==='NYSE'){
+            // Restore NYSE live price — match by symbol + investor (col Q = ticker, col B = investor)
+            const ticker=String(row[16]||'').trim();
+            const investor=String(row[1]||'').trim();
+            const livePrice=parseFloat(String(row[12]||'').replace(/[₹,\s]/g,''));
+            if(!isNaN(livePrice)&&livePrice>0){
+              // Primary match: same symbol + same investor; fallback: same symbol + no live price yet
+              let h=nyseData.find(x=>x.symbol===ticker&&(x.investor||'')===investor);
+              if(!h) h=nyseData.find(x=>x.symbol===ticker&&(!x.livePrice||x.livePrice<=0));
+              if(h){ h.livePrice=livePrice; h.liveValue=h.qty*livePrice; navRestored++; }
+            }
+          }
+          // PMS/AIF skipped — handled by pms_aif_values tab
+          // Timestamp restore removed — GSheets serial ≠ JS milliseconds (causes Jan 1970 bug)
+        });
+      }
+    }catch(e){ console.warn('Snapshot restore skipped:',e.message); }
+
     const statusMsg = synced>0
-      ? `PMS/AIF synced · ${synced} holdings updated from Sheets`
-      : `Sheets connected · no PMS/AIF matches found (${rows.length} rows read)`;
+      ? `PMS/AIF synced · ${synced} holdings updated · ${navRestored} MF NAVs restored from snapshot`
+      : `Sheets connected · ${navRestored} MF NAVs restored from snapshot`;
     document.getElementById('sheetsSyncStatus').textContent=statusMsg;
+    lastSyncMsg = statusMsg;
     renderUpdateLog(rows);
     renderAll();
     return synced;
@@ -1688,6 +1861,8 @@ function toInputDate(str){
 }
 
 async function applyManualUpdates(){
+  // Capture baseline before applying changes — for delta display (Feature 5)
+  captureDeltaBaseline();
   const statusEl=document.getElementById('manualStatus');
   let updated=0;
 
@@ -1902,7 +2077,7 @@ async function addNewFund(){
 // ═══════════════════════════════════
 function renderAll(){
   renderSummary();renderMemberCards();renderCharts();renderTable();renderNYSE();renderAB();
-  renderManualUpdates();renderNavFeed();
+  renderManualUpdates();renderNavFeed();renderStalenessPanel();
   document.getElementById('headerDate').textContent=fmtDate(lastRefreshed).toUpperCase();
   document.getElementById('lastUpdatedTime').textContent=lastRefreshed.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
 }
@@ -1919,10 +2094,15 @@ function renderSummary(){
   const liveCount  = mfHoldings.filter(h=>navCache[h.schemeCode]).length;
   const failCount  = navFetchFailed.length;
   const renameCount= navRenamed.length;
+  const fallbackCount = navFromFallback.length;
 
   if(failCount > 0){
     document.getElementById('navCoverage').textContent = liveCount+' / '+(liveCount+failCount)+' live';
     document.getElementById('navCoverage').className   = 'stat-value loss';
+  } else if(fallbackCount > 0){
+    document.getElementById('navCoverage').textContent = liveCount+' live ('+fallbackCount+' via backup)';
+    document.getElementById('navCoverage').className   = 'stat-value';
+    document.getElementById('navCoverage').style.color = 'var(--accent)';
   } else if(renameCount > 0){
     document.getElementById('navCoverage').textContent = liveCount+' live NAVs';
     document.getElementById('navCoverage').className   = 'stat-value';
@@ -1936,7 +2116,9 @@ function renderSummary(){
   if(failCount > 0) freshMsgs.push(`<span style="color:var(--red);cursor:pointer" onclick="showFreshDetail()">⚠ ${failCount} fetch failed — click to fix</span>`);
   if(renameCount > 0) freshMsgs.push(`<span style="color:var(--accent)">${renameCount} fund(s) renamed</span>`);
   if(failCount===0 && renameCount===0 && liveCount>0) freshMsgs.push('All codes verified ✓');
-  document.getElementById('sheetsSyncStatus').innerHTML = freshMsgs.join(' &nbsp;·&nbsp; ') || 'Hit Refresh NAVs to verify';
+  document.getElementById('sheetsSyncStatus').innerHTML = freshMsgs.length
+    ? freshMsgs.join(' &nbsp;·&nbsp; ')
+    : (lastSyncMsg || 'Hit Refresh NAVs to verify');
   // Update holding count in subtitle and summary card dynamically
   const total=portfolioData.length;
   document.querySelector('.header-left .subtitle').innerHTML=`${total} HOLDINGS &nbsp;·&nbsp; 5 INVESTORS &nbsp;·&nbsp; AS AT <span id="headerDate">${fmtDate(lastRefreshed).toUpperCase()}</span>`;
@@ -2033,7 +2215,11 @@ function renderTable(){
       <td><span class="member-dot" style="background:${meta?meta.color:'#666'}"></span><span style="font-size:12px">${shortName(h.investor)}</span></td>
       <td><span class="tag ${getTagClass(h)}">${getTypeLabel(h)}</span></td>
       <td style="text-align:right"><span class="amount">${fmtExact(h.invested)}</span></td>
-      <td style="text-align:right"><span class="amount">${fmtExact(h.currentValue||0)}</span>${h.soaDate?`<div style="font-size:10px;color:var(--text-dim)">${h.soaDate}</div>`:''}</td>
+      <td style="text-align:right">
+        <span class="amount">${fmtExact(h.currentValue||0)}</span>
+        ${(()=>{if(deltaBaseline===null||deltaBaseline[h.id]===undefined)return '';const _d=(h.currentValue||0)-deltaBaseline[h.id];if(Math.abs(_d)<100)return '';return `<span class="delta-chip ${_d>=0?'up':'down'}">${_d>=0?'▲':'▼'} ${fmtL(Math.abs(_d))}</span>`;})()}
+        ${h.soaDate?`<div style="font-size:10px;color:var(--text-dim)">${h.soaDate}</div>`:''}
+      </td>
       <td style="text-align:right">${navStr}</td>
       <td style="text-align:right"><div class="${gainClass(gain)}" style="font-family:var(--font-mono,monospace);font-size:12px">${gainPrefix(gain)}${fmtExact(gain)}</div><div class="${gainClass(gain)}" style="font-family:var(--font-mono,monospace);font-size:11px">${gainPrefix(gainPct)}${gainPct.toFixed(1)}%</div></td>
       <td style="text-align:right"><span style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-muted)">${days!==null?days+'d':'—'}</span></td>
