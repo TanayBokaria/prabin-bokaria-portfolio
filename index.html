@@ -833,6 +833,7 @@ const _deletedIds = JSON.parse(localStorage.getItem('bokaria_prabin_deleted')||'
 let portfolioData = PORTFOLIO.map(h=>({...h})).filter(h=>!_deletedIds.includes(h.id));
 let navFetchFailed = [];   // codes that failed during last refresh
 let navRenamed = [];       // {id, oldName, newName} updated during last refresh
+let navApiDown = false;    // true when circuit breaker trips (API outage, not bad codes)
 let navCache = {}, lastRefreshed = new Date(), activeFilter = 'all';
 let sheetsConfig = null, sheetsConnected = false;
 let memberChartInst = null, categoryChartInst = null;
@@ -922,8 +923,15 @@ function fetchWithTimeout(url, options={}, ms=12000){
 }
 
 async function fetchSingleNAV(code){
-  try{
-    const r=await fetchWithTimeout(`https://api.mfapi.in/mf/${code}/latest`);
+  // Two attempts for transient HTTP errors (429/502/503/504); timeouts bail immediately
+  const RETRYABLE=new Set([429,502,503,504]);
+  for(let attempt=0;attempt<2;attempt++){
+   try{
+    const r=await fetchWithTimeout(`https://api.mfapi.in/mf/${code}/latest`,{},6000);
+    if(RETRYABLE.has(r.status)){
+      if(attempt===0) await new Promise(x=>setTimeout(x,1500));
+      continue; // retry once
+    }
     if(!r.ok)return null;
     const d=await r.json();
     if(!d.data?.length)return null;
@@ -942,6 +950,10 @@ async function fetchSingleNAV(code){
     }
     return result;
   }catch(e){}
+  }catch(e){
+    return null; // timeout / network error — don't retry, treat as API down
+  }
+  } // end retry loop
   return null;
 }
 async function refreshNAVs(){
@@ -963,29 +975,33 @@ async function refreshNAVs(){
   await fetchUSDINR();
 
   // 3. Fetch MF NAVs
-  navFetchFailed = []; navRenamed = []; // reset tracking
+  navFetchFailed = []; navRenamed = []; navApiDown = false; // reset tracking
   document.getElementById('loadingText').textContent='Fetching MF NAVs';
   const codes=[...new Set(portfolioData.filter(h=>h.schemeCode).map(h=>h.schemeCode))];
+  let consecutiveFails=0;
   for(const code of codes){
+    if(navApiDown){ navFetchFailed.push(code); continue; } // circuit open — skip remaining
     st.textContent='Fetching '+(MF_NAMES[code]||code)+'...';
     const r=await fetchSingleNAV(code);
     if(r){
+      consecutiveFails=0;
       navCache[code]=r;
       portfolioData.forEach(h=>{
         if(String(h.schemeCode)===String(code)){
           h.currentNav=r.nav;
           h.navDate=r.date;
-          // Only update currentValue from NAV if this is an MF with valid units
-          if(h.type==='MF' && h.units && h.units>0){
-            h.currentValue=h.units*r.nav;
-          }
-          // PMS/AIF values are never overwritten by NAV fetch
+          if(h.type==='MF' && h.units && h.units>0) h.currentValue=h.units*r.nav;
         }
       });
     } else {
-      navFetchFailed.push(code); // track failed fetches
+      navFetchFailed.push(code);
+      consecutiveFails++;
+      if(consecutiveFails>=3){
+        navApiDown=true; // circuit open — API is down, not scheme code issue
+        st.textContent='mfapi.in API unavailable — stopping NAV fetch';
+      }
     }
-    await new Promise(x=>setTimeout(x,80));
+    if(!navApiDown) await new Promise(x=>setTimeout(x,400));
   }
 
   // 3. Fetch NYSE stock prices
@@ -2489,19 +2505,28 @@ function showFreshDetail(){
     + '</div>';
 
   if(navFetchFailed.length){
-    html += '<div style="font-size:11px;font-family:var(--font-mono,monospace);color:var(--red);margin-bottom:8px">NAV FETCH FAILED — ' + navFetchFailed.length + ' FUND(S)</div>';
-    html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">';
-    navFetchFailed.forEach(code=>{
-      const h = portfolioData.find(x=>String(x.schemeCode)===String(code));
-      const name = h ? (h.originalName||h.fund||'Unknown') : 'Unknown';
-      html += '<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(224,123,106,0.07);border:1px solid rgba(224,123,106,0.2);border-radius:6px;padding:8px 12px">'
-        + '<div><div style="font-size:12px;font-weight:600">' + name + '</div>'
-        + '<div style="font-size:10px;font-family:var(--font-mono,monospace);color:var(--text-muted);margin-top:2px">Code: ' + code + '</div></div>'
-        + '<button onclick="openCodeEditor(' + (h?h.id:0) + ');closeFreshDetail()" '
-        + 'style="background:var(--accent);color:#0d0f14;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Fix Code ✎</button>'
+    if(navApiDown){
+      html += '<div style="background:rgba(224,123,106,0.1);border:1px solid rgba(224,123,106,0.3);border-radius:8px;padding:12px 16px;margin-bottom:12px">'
+        + '<div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:6px">&#9888; mfapi.in API is temporarily unavailable</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);line-height:1.6">'
+        + navFetchFailed.length + ' fund(s) could not be updated &mdash; but <strong style="color:var(--text)">your scheme codes are correct</strong>. '
+        + 'This is a server-side outage on mfapi.in. Please try Refresh NAVs again in a few hours.</div>'
         + '</div>';
-    });
-    html += '</div>';
+    } else {
+      html += '<div style="font-size:11px;font-family:var(--font-mono,monospace);color:var(--red);margin-bottom:8px">NAV FETCH FAILED — ' + navFetchFailed.length + ' FUND(S)</div>';
+      html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">';
+      navFetchFailed.forEach(code=>{
+        const h = portfolioData.find(x=>String(x.schemeCode)===String(code));
+        const name = h ? (h.originalName||h.fund||'Unknown') : 'Unknown';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(224,123,106,0.07);border:1px solid rgba(224,123,106,0.2);border-radius:6px;padding:8px 12px">'
+          + '<div><div style="font-size:12px;font-weight:600">' + name + '</div>'
+          + '<div style="font-size:10px;font-family:var(--font-mono,monospace);color:var(--text-muted);margin-top:2px">Code: ' + code + '</div></div>'
+          + '<button onclick="openCodeEditor(' + (h?h.id:0) + ');closeFreshDetail()" '
+          + 'style="background:var(--accent);color:#0d0f14;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Fix Code ✎</button>'
+          + '</div>';
+      });
+      html += '</div>';
+    }
   }
 
   if(navRenamed.length){
