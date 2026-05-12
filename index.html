@@ -1014,6 +1014,17 @@ async function refreshNAVs(){
 
   lastRefreshed=new Date();st.textContent='Done!';
 
+  // Persist NAV cache to localStorage so values survive page reload
+  try{
+    const _navSnap={};
+    portfolioData.forEach(h=>{
+      if(h.schemeCode&&h.currentNav!=null){
+        _navSnap[String(h.schemeCode)]={nav:h.currentNav,date:h.navDate||'',value:h.currentValue};
+      }
+    });
+    localStorage.setItem(NAV_CACHE_KEY,JSON.stringify({ts:Date.now(),navs:_navSnap}));
+  }catch(e){}
+
   // 4. Write full portfolio snapshot to Sheets
   if(sheetsConnected){
     document.getElementById('loadingText').textContent='Saving to Sheets';
@@ -1361,6 +1372,7 @@ function filterNYSE(member,btnEl){
 // GOOGLE SHEETS
 // ═══════════════════════════════════
 const LS_KEY='bokaria_prabin_sheets_v2';
+const NAV_CACHE_KEY='bokaria_prabin_nav_cache';
 // ── Pre-configured credentials — pre-fill for all users ──
 const DEFAULT_SHEET_ID='';  // Prabin family — enter Sheet ID when created
 const DEFAULT_CLIENT_ID='54722716336-puhqj8e67mf44jbi9unpm2lcgplos829.apps.googleusercontent.com';
@@ -2348,6 +2360,16 @@ async function exportToExcel(){
 // INIT
 // ═══════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  // Restore last-known NAVs from localStorage before first render
+  try{
+    const _cached=JSON.parse(localStorage.getItem(NAV_CACHE_KEY)||'null');
+    if(_cached?.navs){
+      portfolioData.forEach(h=>{
+        const c=_cached.navs[String(h.schemeCode)];
+        if(c){h.currentNav=c.nav;h.navDate=c.date;if(h.type==='MF'&&h.units>0)h.currentValue=h.units*c.nav;}
+      });
+    }
+  }catch(e){}
   renderAll();
   fetchUSDINR(); // pre-load FX rate on startup
 
