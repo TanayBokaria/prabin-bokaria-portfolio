@@ -94,6 +94,9 @@
     .member-stat-value{font-family:'DM Mono',monospace;font-size:11px;}
 
     .page-footer{text-align:center;padding:20px;font-size:11px;color:var(--text-dim);font-family:'DM Mono',monospace;border-top:1px solid var(--border);margin-top:20px;}
+
+    /* AB EQUITY HOLDINGS */
+    .ab-footer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:24px;flex-wrap:wrap;font-size:12px;}
   </style>
 </head>
 <body>
@@ -201,6 +204,46 @@
       </table>
     </div>
   </div>
+
+  <!-- AB EQUITY HOLDINGS -->
+  <div class="panel" id="abPanel" style="margin-bottom:40px;display:none">
+    <div class="panel-header">
+      <div class="panel-title">Aditya Birla Equity Holdings</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="as-of-pill" id="abAsOfPill">—</div>
+        <div class="table-count" id="abCount">— STOCKS</div>
+      </div>
+    </div>
+    <div class="filter-tabs" id="abFilter">
+            <button class="filter-tab active" onclick="filterAB('all',this)">All Members</button>
+      <button class="filter-tab" onclick="filterAB('Prabin Bokaria',this)"><span class="member-dot" style="background:var(--prabin)"></span>Prabin</button>
+      <button class="filter-tab" onclick="filterAB('Ritu Bokaria',this)"><span class="member-dot" style="background:var(--ritu)"></span>Ritu</button>
+      <button class="filter-tab" onclick="filterAB('Pranjul Bokaria',this)"><span class="member-dot" style="background:var(--pranjul)"></span>Pranjul</button>
+      <button class="filter-tab" onclick="filterAB('Preksha Bokaria',this)"><span class="member-dot" style="background:var(--preksha)"></span>Preksha</button>
+      <button class="filter-tab" onclick="filterAB('Prabin Bokaria HUF',this)"><span class="member-dot" style="background:var(--huf)"></span>HUF</button>
+    </div>
+    <div class="table-scroll">
+      <table class="holdings-table">
+        <thead><tr>
+          <th>Stock / Instrument</th>
+          <th>Investor</th>
+          <th style="text-align:right">Qty</th>
+          <th style="text-align:right">Avg Cost (₹)</th>
+          <th style="text-align:right">LTP (₹)</th>
+          <th style="text-align:right">Invested (₹)</th>
+          <th style="text-align:right">Current Value (₹)</th>
+          <th style="text-align:right">P&amp;L (₹)</th>
+        </tr></thead>
+        <tbody id="abBody"></tbody>
+      </table>
+    </div>
+    <div class="ab-footer">
+      <div><span style="color:var(--text-muted)">Total Invested: </span><span id="abTotalInvested" style="font-family:'DM Mono',monospace">—</span></div>
+      <div><span style="color:var(--text-muted)">Current Value: </span><span id="abTotalCurrent" style="font-family:'DM Mono',monospace;font-weight:600">—</span></div>
+      <div><span style="color:var(--text-muted)">Overall P&amp;L: </span><span id="abTotalPnl" style="font-family:'DM Mono',monospace">—</span></div>
+    </div>
+  </div>
+
 </main>
 
 <div class="page-footer">
@@ -227,6 +270,8 @@ const MEMBER_META = {
 // ═══════════════════════════════════
 let allHoldings = [];
 let holdingsFilter = 'all';
+let abHoldings = [];   // AB direct equity holdings
+let abFilter = 'all';
 let memberChartInst = null, categoryChartInst = null;
 
 // ═══════════════════════════════════
@@ -294,6 +339,7 @@ async function loadSnapshot(){
 
     renderAll();
     hideLoading();
+    loadABHoldings(); // Load AB equity holdings asynchronously
 
   }catch(e){
     console.error(e);
@@ -319,15 +365,16 @@ function renderAll(){
   renderMemberCards();
   renderCharts();
   renderHoldings();
+  renderAB();
 }
 
 function memberTotals(){
   const t = {};
-  allHoldings.forEach(h=>{
+  [...allHoldings, ...abHoldings].forEach(h=>{
     if(!t[h.investor]) t[h.investor]={invested:0,value:0,gain:0,count:0};
-    t[h.investor].invested += h.invested;
-    t[h.investor].value    += h.currentValue;
-    t[h.investor].gain     += h.gain;
+    t[h.investor].invested += h.invested||0;
+    t[h.investor].value    += h.currentValue||0;
+    t[h.investor].gain     += (h.gain != null ? h.gain : (h.currentValue||0)-(h.invested||0));
     t[h.investor].count++;
   });
   return t;
@@ -339,6 +386,8 @@ function categoryTotals(){
     const cat = h.category || h.type || 'Other';
     t[cat] = (t[cat]||0) + h.currentValue;
   });
+  const abTotal = abHoldings.reduce((a,h)=>a+h.currentValue,0);
+  if(abTotal>0) t['Direct Equity'] = (t['Direct Equity']||0) + abTotal;
   return t;
 }
 
@@ -501,6 +550,102 @@ function filterHoldings(member, btn){
   document.querySelectorAll('#holdingsFilter .filter-tab').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
   renderHoldings();
+}
+
+const renderSummary_ = renderSummaryCards;
+
+// ═══════════════════════════════════
+// AB HOLDINGS — load from public sheet
+// ═══════════════════════════════════
+async function loadABHoldings(){
+  try{
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=ab_holdings`;
+    const r = await fetch(url);
+    if(!r.ok) return; // Tab may not exist yet — show nothing
+    const text = await r.text();
+    const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\)/);
+    if(!match) return;
+    const json = JSON.parse(match[1]);
+    if(!json?.table?.rows?.length) return;
+
+    abHoldings = [];
+    json.table.rows.forEach(row=>{
+      const get = i => row.c[i]?.v ?? row.c[i]?.f ?? '';
+      const investor = String(get(0)||'');
+      if(!investor) return;
+      abHoldings.push({
+        investor,
+        userId:      String(get(1)||''),
+        instrument:  String(get(2)||''),
+        qty:         parseFloat(get(3))||0,
+        avgPrice:    parseFloat(get(4))||0,
+        invested:    parseFloat(get(5))||0,
+        currentValue:parseFloat(get(6))||0,
+        pnl:         parseFloat(get(7))||0,
+        ltp:         parseFloat(get(8))||0,
+        asOf:        String(get(9)||''),
+      });
+    });
+
+    if(abHoldings.length > 0){
+      const panel = document.getElementById('abPanel');
+      if(panel) panel.style.display = '';
+      const asOf = abHoldings[0].asOf;
+      if(asOf){
+        const pill = document.getElementById('abAsOfPill');
+        if(pill) pill.textContent = 'As of ' + asOf;
+      }
+      renderAB();
+      // Re-render totals/charts to include AB data
+      renderSummary_();
+      renderMemberCards();
+      renderCharts();
+    }
+  }catch(e){
+    console.warn('AB Holdings load skipped:', e.message);
+  }
+}
+
+function renderAB(){
+  const data = abFilter==='all' ? abHoldings : abHoldings.filter(h=>h.investor===abFilter);
+  const countEl = document.getElementById('abCount');
+  if(countEl) countEl.textContent = abHoldings.length + ' STOCKS';
+  const tbody = document.getElementById('abBody');
+  if(!tbody) return;
+  tbody.innerHTML = '';
+  data.forEach(h=>{
+    const m = MEMBER_META[h.investor];
+    const pnl = h.currentValue - h.invested;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><div style="font-weight:600;font-size:12px">${h.instrument}</div></td>
+      <td><span class="member-dot" style="background:${m?m.color:'#666'}"></span> <span style="font-size:12px">${shortName(h.investor)}</span></td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px">${h.qty.toLocaleString('en-IN',{maximumFractionDigits:3})}</td>
+      <td style="text-align:right"><span class="amount">₹${h.avgPrice.toFixed(2)}</span></td>
+      <td style="text-align:right"><span class="amount">₹${h.ltp.toFixed(2)}</span></td>
+      <td style="text-align:right"><span class="amount">${fmtExact(h.invested)}</span></td>
+      <td style="text-align:right"><span class="amount">${fmtExact(h.currentValue)}</span></td>
+      <td style="text-align:right"><span class="${gainClass(pnl)}" style="font-family:'DM Mono',monospace;font-size:12px">${gainPrefix(pnl)}${fmtExact(Math.abs(pnl))}</span></td>`;
+    tbody.appendChild(tr);
+  });
+  // Footer totals
+  const allData = abHoldings;
+  const tInv = allData.reduce((a,h)=>a+h.invested,0);
+  const tCur = allData.reduce((a,h)=>a+h.currentValue,0);
+  const tPnl = tCur - tInv;
+  const invEl = document.getElementById('abTotalInvested');
+  const curEl = document.getElementById('abTotalCurrent');
+  const pnlEl = document.getElementById('abTotalPnl');
+  if(invEl) invEl.textContent = fmtCr(tInv);
+  if(curEl) curEl.textContent = fmtCr(tCur);
+  if(pnlEl) pnlEl.innerHTML  = `<span class="${gainClass(tPnl)}">${gainPrefix(tPnl)}${fmtCr(Math.abs(tPnl))}</span>`;
+}
+
+function filterAB(member, btn){
+  abFilter = member;
+  document.querySelectorAll('#abFilter .filter-tab').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  renderAB();
 }
 
 document.addEventListener('DOMContentLoaded', () => { loadSnapshot(); });
