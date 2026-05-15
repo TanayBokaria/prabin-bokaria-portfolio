@@ -244,6 +244,24 @@
 
   /* ── STALENESS PANEL (Feature 2) ── */
   .stale-panel{background:rgba(232,168,56,0.08);border:1px solid rgba(232,168,56,0.28);border-radius:12px;padding:14px 18px;margin-bottom:18px;}
+  /* ── PRE-FLIGHT HEALTH CHECK ── */
+  .preflight-panel{background:rgba(77,184,160,0.06);border:1px solid rgba(77,184,160,0.2);border-radius:12px;padding:14px 18px;margin-bottom:18px;transition:border-color 0.3s,background 0.3s;}
+  .preflight-panel.has-errors{background:rgba(224,123,106,0.06);border-color:rgba(224,123,106,0.3);}
+  .preflight-hdr{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+  .preflight-title{font-size:11px;font-family:var(--font-mono,monospace);color:var(--accent2);font-weight:500;letter-spacing:0.6px;text-transform:uppercase;flex:1;}
+  .preflight-summary{font-size:11px;font-family:var(--font-mono,monospace);color:var(--text-muted);}
+  .preflight-rerun{font-size:10px;font-family:var(--font-mono,monospace);color:var(--text-muted);background:var(--surface2);border:1px solid var(--border);padding:3px 9px;border-radius:4px;cursor:pointer;}
+  .preflight-rerun:hover{border-color:var(--accent2);color:var(--accent2);}
+  .preflight-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  @media(max-width:760px){.preflight-grid{grid-template-columns:1fr 1fr;}}
+  @media(max-width:480px){.preflight-grid{grid-template-columns:1fr;}}
+  .pf-row{display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border-radius:7px;padding:9px 11px;border:1px solid var(--border);transition:border-color 0.3s,background 0.3s;}
+  .pf-row.pass{border-color:rgba(92,184,138,0.3);}
+  .pf-row.fail{border-color:rgba(224,123,106,0.4);background:rgba(224,123,106,0.07);}
+  .pf-row.warn{border-color:rgba(200,169,110,0.3);}
+  .pf-icon{font-size:14px;line-height:1.3;flex-shrink:0;width:18px;text-align:center;}
+  .pf-label{font-size:11px;font-weight:600;color:var(--text);line-height:1.3;}
+  .pf-detail{font-size:10px;font-family:var(--font-mono,monospace);color:var(--text-muted);margin-top:2px;line-height:1.5;word-break:break-word;}
   .stale-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
   .stale-title{font-size:11px;font-weight:600;color:var(--accent);font-family:var(--font-mono,monospace);text-transform:uppercase;letter-spacing:0.6px;}
   .stale-count{font-size:10px;background:rgba(232,168,56,0.15);border:1px solid rgba(232,168,56,0.4);color:var(--accent);padding:2px 8px;border-radius:10px;font-family:var(--font-mono,monospace);}
@@ -329,6 +347,9 @@
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Export Excel
     </button>
+    <button class="refresh-btn" id="preflightBtn" onclick="togglePreflightPanel()" title="System health check — click to run" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);font-size:12px;">
+      ⚕ Health
+    </button>
     <button class="refresh-btn" id="refreshBtn" onclick="refreshNAVs()">
       <svg id="refreshIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
       Refresh NAVs
@@ -337,6 +358,16 @@
 </header>
 
 <main class="main">
+  <!-- PRE-FLIGHT HEALTH CHECK PANEL -->
+  <div id="preflightPanel" class="preflight-panel" style="display:none">
+    <div class="preflight-hdr">
+      <span class="preflight-title">⚕ System Health Check</span>
+      <span id="preflightSummary" class="preflight-summary">—</span>
+      <button class="preflight-rerun" onclick="runPreflightCheck()">↻ Re-run</button>
+    </div>
+    <div id="preflightGrid" class="preflight-grid"></div>
+  </div>
+
   <div class="summary-grid">
     <div class="stat-card"><div class="stat-label">Total Invested</div><div class="stat-value" id="totalInvested">—</div><div class="stat-sub" style="color:var(--text-muted)">Across 44 holdings</div></div>
     <div class="stat-card teal"><div class="stat-label">Current Value</div><div class="stat-value" id="totalCurrent">—</div><div class="stat-sub" id="totalGainAmt">—</div></div>
@@ -863,6 +894,7 @@ let navApiDown = false;    // true when circuit breaker trips (both sources down
 let navFromFallback = [];  // codes that succeeded via mfdata.in fallback
 let mfdataApiDown = false; // set true if mfdata.in times out once this session — skip it
 let lastSyncMsg = '';      // last message set by loadFromSheets — preserved across renderAll
+let _snapshotWriteMsg = ''; // set after each snapshot write — persists across renderAll
 let navCache = {}, lastRefreshed = new Date(), activeFilter = 'all';
 let sheetsConfig = null, sheetsConnected = false;
 let memberChartInst = null, categoryChartInst = null;
@@ -1081,6 +1113,7 @@ async function refreshNAVs(){
   try{
   // Capture baseline before any updates — for delta display (Feature 5)
   captureDeltaBaseline();
+  _snapshotWriteMsg = ''; // reset snapshot status for this refresh cycle
 
   // 1. Re-sync from Google Sheets first (picks up latest PMS/AIF values and new holdings)
   if(sheetsConnected){
@@ -1156,7 +1189,14 @@ async function refreshNAVs(){
   if(sheetsConnected && navSuccessCount>0){
     document.getElementById('loadingText').textContent='Saving to Sheets';
     st.textContent='Saving snapshot to Google Sheets...';
-    await writePortfolioSnapshot();
+    const _snapOk = await writePortfolioSnapshot();
+    if(_snapOk){
+      _snapshotWriteMsg = 'Snapshot saved ✓';
+      st.textContent = 'Snapshot saved to Sheets ✓';
+    } else {
+      _snapshotWriteMsg = '⚠ Snapshot NOT saved — token may have expired. Reconnect Sheets & refresh.';
+      st.textContent = _snapshotWriteMsg;
+    }
   }
 
   }catch(e){
@@ -1270,6 +1310,12 @@ async function writePortfolioSnapshot(){
     if(!r.ok){
       const err = await r.json().catch(()=>({}));
       console.error('Snapshot write error:', err);
+      return false;
+    }
+    // Verify: check updatedCells in response — 0 means nothing actually persisted
+    const _respData = await r.json().catch(()=>({}));
+    if((_respData.updatedCells||0) === 0){
+      console.warn('Snapshot write: 0 cells updated — silent write failure');
       return false;
     }
     return true;
@@ -2116,6 +2162,12 @@ function renderSummary(){
   if(failCount > 0) freshMsgs.push(`<span style="color:var(--red);cursor:pointer" onclick="showFreshDetail()">⚠ ${failCount} fetch failed — click to fix</span>`);
   if(renameCount > 0) freshMsgs.push(`<span style="color:var(--accent)">${renameCount} fund(s) renamed</span>`);
   if(failCount===0 && renameCount===0 && liveCount>0) freshMsgs.push('All codes verified ✓');
+  // Append snapshot write outcome if present
+  if(_snapshotWriteMsg) freshMsgs.push(
+    _snapshotWriteMsg.startsWith('⚠')
+      ? `<span style="color:var(--red)">${_snapshotWriteMsg}</span>`
+      : `<span style="color:var(--green)">${_snapshotWriteMsg}</span>`
+  );
   document.getElementById('sheetsSyncStatus').innerHTML = freshMsgs.length
     ? freshMsgs.join(' &nbsp;·&nbsp; ')
     : (lastSyncMsg || 'Hit Refresh NAVs to verify');
@@ -4534,6 +4586,137 @@ function closeSOAModal(){
   closeModal('soaReviewModal');
   document.getElementById('soaCards').innerHTML='';
 }
+
+// ═══════════════════════════════════
+// PRE-FLIGHT HEALTH CHECK
+// ═══════════════════════════════════
+const PREFLIGHT_SCHEME = '118778';
+
+function togglePreflightPanel(){
+  const p = document.getElementById('preflightPanel');
+  if(!p) return;
+  if(p.style.display === 'none'){ p.style.display = 'block'; runPreflightCheck(); }
+  else { p.style.display = 'none'; }
+}
+
+function _pfRowHtml(id, label, status, detail){
+  const icons = {pending:'⏳', pass:'✅', fail:'❌', warn:'⚠️'};
+  return `<div class="pf-row ${status}" id="pf_${id}">
+    <div class="pf-icon">${icons[status]||'⏳'}</div>
+    <div style="flex:1;min-width:0">
+      <div class="pf-label">${label}</div>
+      <div class="pf-detail" id="pf_d_${id}">${detail||''}</div>
+    </div>
+  </div>`;
+}
+
+function _pfUpdate(id, status, detail){
+  const row = document.getElementById(`pf_${id}`);
+  if(!row) return;
+  const icons = {pending:'⏳', pass:'✅', fail:'❌', warn:'⚠️'};
+  row.className = `pf-row ${status}`;
+  row.querySelector('.pf-icon').textContent = icons[status] || '⏳';
+  if(detail !== undefined){ const d = document.getElementById(`pf_d_${id}`); if(d) d.textContent = detail; }
+}
+
+async function runPreflightCheck(){
+  const gridEl = document.getElementById('preflightGrid');
+  const summaryEl = document.getElementById('preflightSummary');
+  const panelEl = document.getElementById('preflightPanel');
+  if(!gridEl) return;
+  gridEl.innerHTML = [
+    _pfRowHtml('oauth','Sheets connected','pending','Checking token…'),
+    _pfRowHtml('snap','Snapshot readable','pending','Fetching sheet…'),
+    _pfRowHtml('plaus','Snapshot plausible','pending','Checking values…'),
+    _pfRowHtml('mfapi','NAV source (primary)','pending','Pinging mfapi.in…'),
+    _pfRowHtml('mfdata','NAV source (fallback)','pending','Pinging mfdata.in…'),
+    _pfRowHtml('fx','USD/INR rate source','pending','Fetching rate…'),
+  ].join('');
+  summaryEl.textContent = 'Running…'; summaryEl.style.color = ''; panelEl.classList.remove('has-errors');
+  let failures = 0;
+  const hasToken = !!(sheetsConfig && sheetsConfig.accessToken);
+  _pfUpdate('oauth', hasToken?'pass':'fail', hasToken?'Token present in session':'Not connected — click the Sheets pill');
+  if(!hasToken) failures++;
+  const [snapRes, mfaRes, mfdRes, fxRes] = await Promise.allSettled([
+    _pfCheckSnapshot(), _pfCheckMfapi(), _pfCheckMfdata(), _pfCheckFx()
+  ]);
+  const snap = snapRes.status==='fulfilled'?snapRes.value:{ok:false,error:'Request failed'};
+  if(!snap.ok){ _pfUpdate('snap','fail',snap.error||'Could not read snapshot tab'); _pfUpdate('plaus','fail','Cannot check — snapshot unreadable'); failures+=2; }
+  else{
+    _pfUpdate('snap','pass',`${snap.rowCount} holdings found`);
+    if(snap.plausible) _pfUpdate('plaus','pass',`${snap.nonZero}/${snap.rowCount} rows have value > ₹0`);
+    else{ _pfUpdate('plaus','fail',`Only ${snap.nonZero}/${snap.rowCount} rows have value > ₹0 — run Refresh NAVs`); failures++; }
+  }
+  const mfa = mfaRes.status==='fulfilled'?mfaRes.value:{ok:false};
+  _pfUpdate('mfapi', mfa.ok?'pass':'fail', mfa.ok?`NAV: ₹${mfa.nav}  (${mfa.date})`:'mfapi.in unreachable — NAV refresh will fail');
+  if(!mfa.ok) failures++;
+  const mfd = mfdRes.status==='fulfilled'?mfdRes.value:{ok:false};
+  _pfUpdate('mfdata', mfd.ok?'pass':'warn', mfd.ok?`NAV: ₹${mfd.nav}`:'mfdata.in unreachable (fallback unavailable)');
+  const fx = fxRes.status==='fulfilled'?fxRes.value:{ok:false};
+  _pfUpdate('fx', fx.ok?'pass':'warn', fx.ok?`USD/INR: ₹${fx.rate}`:'FX API down — using cached ₹84.50');
+  const btn = document.getElementById('preflightBtn');
+  if(failures===0){
+    summaryEl.textContent='✅ All systems OK'; summaryEl.style.color='var(--green)';
+    if(btn){btn.style.borderColor='rgba(92,184,138,0.5)';btn.style.color='var(--green)';btn.title='All systems healthy ✅';}
+  } else {
+    summaryEl.textContent=`⚠ ${failures} issue${failures>1?'s':''} found`; summaryEl.style.color='var(--red)'; panelEl.classList.add('has-errors');
+    if(btn){btn.style.borderColor='rgba(224,123,106,0.5)';btn.style.color='var(--red)';btn.title='Issues detected — click for details';}
+  }
+}
+
+async function _pfCheckSnapshot(){
+  try{
+    const sheetId = (sheetsConfig&&sheetsConfig.sheetId)||DEFAULT_SHEET_ID;
+    if(!sheetId) return {ok:false,error:'No Sheet ID configured'};
+    const url=`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=portfolio_snapshot`;
+    const r=await fetchWithTimeout(url,{},10000); const raw=await r.text();
+    const m=raw.match(/setResponse\(([\s\S]*)\)/);
+    if(!m) return {ok:false,error:'Sheet not publicly accessible — check sharing settings'};
+    const d=JSON.parse(m[1]);
+    if(d.status==='error') return {ok:false,error:((d.errors||[{}])[0].message||'Sheet returned error')};
+    const rows=(d.table&&d.table.rows)||[];
+    if(rows.length===0) return {ok:false,error:'Snapshot tab empty — run Refresh NAVs'};
+    const nonZero=rows.filter(row=>{const v=row&&row.c&&row.c[8]&&row.c[8].v;return v!==null&&v!==undefined&&parseFloat(v)>0;}).length;
+    return {ok:true,rowCount:rows.length,nonZero,plausible:nonZero>rows.length*0.5};
+  }catch(e){return {ok:false,error:e.message||'Network error'};}
+}
+async function _pfCheckMfapi(){
+  try{
+    const r=await fetchWithTimeout(`https://api.mfapi.in/mf/${PREFLIGHT_SCHEME}/latest`,{},8000);
+    const d=await r.json(); const nav=parseFloat(d&&d.data&&d.data[0]&&d.data[0].nav);
+    if(!nav||isNaN(nav)) return {ok:false};
+    return {ok:true,nav:nav.toFixed(2),date:(d.data[0].date||'')};
+  }catch(e){return {ok:false};}
+}
+async function _pfCheckMfdata(){
+  try{
+    const r=await fetchWithTimeout(`https://mfdata.in/api/v1/schemes/${PREFLIGHT_SCHEME}`,{},5000);
+    const d=await r.json(); const nav=parseFloat(d&&d.data&&d.data.nav);
+    if(!nav||isNaN(nav)) return {ok:false};
+    return {ok:true,nav:nav.toFixed(2)};
+  }catch(e){return {ok:false};}
+}
+async function _pfCheckFx(){
+  try{
+    const r=await fetchWithTimeout('https://api.exchangerate-api.com/v4/latest/USD',{},8000);
+    const d=await r.json(); const rate=d&&d.rates&&d.rates.INR;
+    if(!rate||rate<50||rate>150) return {ok:false};
+    return {ok:true,rate:rate.toFixed(2)};
+  }catch(e){return {ok:false};}
+}
+(async function _pfAutoCheck(){
+  await new Promise(res=>setTimeout(res,3000));
+  const btn=document.getElementById('preflightBtn'); if(!btn) return;
+  try{
+    const [snap,mfa,fx]=await Promise.allSettled([_pfCheckSnapshot(),_pfCheckMfapi(),_pfCheckFx()]);
+    const allOk=snap.value&&snap.value.ok&&snap.value.plausible&&mfa.value&&mfa.value.ok&&fx.value&&fx.value.ok;
+    btn.style.borderColor=allOk?'rgba(92,184,138,0.5)':'rgba(224,123,106,0.5)';
+    btn.style.color=allOk?'var(--green)':'var(--red)';
+    btn.title=allOk?'All systems healthy ✅':'Issues detected — click for details';
+    if(!allOk){const panel=document.getElementById('preflightPanel');if(panel){panel.style.display='block';await runPreflightCheck();}}
+  }catch(e){}
+})();
+
 </script>
 <script>/* PDF.js 3.11.174 bundled */
 /**
