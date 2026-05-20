@@ -2931,6 +2931,7 @@ async function handleSOAUpload(event){
   } else {
     const pct = totalPossible>0 ? Math.round((totalFields/totalPossible)*100) : 0;
     desc.textContent = `Review and complete the fields below before applying. ${pct}% of fields extracted automatically.`;
+    window._soaResults = results;
     results.forEach((r,i) => renderSOACard(r, i, cards));
     const autoCount = results.filter(r=>!r.error && r.state!=='novalue').length;
     summary.textContent = `${autoCount} holding(s) from ${files.length} file(s) · ${pct}% auto-extracted`;
@@ -3446,6 +3447,68 @@ function matchInvestorName(raw){
   return raw.trim();
 }
 
+// ── PMS/AIF suggestion matching ─────────────────────────────────────────────
+// When a PMS/AIF SOA creates a 'new' entry, search for existing holdings that
+// could be the same fund (same house + investor, or specific name word overlap).
+// Handles the common case where SOA strategy names differ from dashboard names
+// e.g. "Girik Multicap Growth Equity Strategy" ↔ "Girik Wealth Advisors Pvt. Ltd (PMS)".
+function findPMSSuggestions(r){
+  if(!r) return [];
+  const rType = (r.type||r.category||'').toUpperCase();
+  if(!['PMS','AIF'].includes(rType)) return [];
+  const inv = (r.investor||'').toLowerCase();
+  const fn  = (r.fundName||'').toLowerCase();
+  const rHouse = (r.fundHouse||r.house||'').toLowerCase();
+  // Exclude generic words that appear in many PMS/AIF names — only match on specific terms
+  const GENERIC = new Set(['equity','growth','fund','strategy','india','direct','scheme','asset',
+    'capital','wealth','management','advisors','pvt','ltd','pms','aif','the','and','for',
+    'series','class','plan','option','regular','conservative','aggressive','moderate']);
+  const specificWords = fn.split(/\s+/).filter(w=>w.length>3 && !GENERIC.has(w));
+  return portfolioData.filter(h=>{
+    if(!h) return false;
+    const hType = (h.type||h.category||'').toUpperCase();
+    if(!['PMS','AIF'].includes(hType)) return false;
+    if(!inv || !h.investor) return false;
+    // Investor must match (first name)
+    const firstWord = inv.split(' ')[0];
+    if(!h.investor.toLowerCase().includes(firstWord)) return false;
+    const hname = (h.originalName||h.fund||'').toLowerCase();
+    const hHouse = (h.house||'').toLowerCase();
+    // House match (most reliable — same manager name ≥ 4 chars)
+    const houseMatch = rHouse && rHouse.length>=4 && hHouse && rHouse===hHouse;
+    // Specific word overlap (non-generic terms like manager surnames, strategy codes)
+    const specificOverlap = specificWords.filter(w=>hname.includes(w)).length;
+    return houseMatch || specificOverlap>=1;
+  });
+}
+
+// Called when Priya clicks "Link to existing entry" in the suggestion banner.
+// Switches the card from 'new' to 'update' mode and re-renders it.
+// Also updates the folio on the matched holding so future uploads self-correct.
+function _soaLinkExisting(idx, matchedId){
+  if(!matchedId || !window._soaResults || !window._soaResults[idx]) return;
+  const r = window._soaResults[idx];
+  r.state = 'update';
+  r.matchedId = matchedId;
+  // Update the matched holding's folio in memory if SOA has a folio — so future uploads match by folio
+  if(r.folio){
+    const h = portfolioData.find(x=>x.id===matchedId);
+    if(h && !h.folio || (h && h.folio !== r.folio)) {
+      h.folio = r.folio.replace(/\s/g,'');
+    }
+  }
+  // Re-render just this card
+  const oldCard = document.querySelector(`[data-soa-idx="${idx}"]`);
+  if(!oldCard) return;
+  const parent = oldCard.parentElement;
+  const nextSibling = oldCard.nextSibling;
+  oldCard.remove();
+  const tempDiv = document.createElement('div');
+  renderSOACard(r, idx, tempDiv);
+  if(nextSibling) parent.insertBefore(tempDiv.firstChild, nextSibling);
+  else parent.appendChild(tempDiv.firstChild);
+}
+
 function matchHolding(folio, fundName, investor){
   // Folio is the most reliable identifier — unique per investor holding
   if(folio){
@@ -3701,6 +3764,26 @@ function renderSOACard(r, idx, container){
   }
 
   // ── NEW FUND path: not in dashboard yet ──
+  // PMS/AIF suggestion: find existing holdings that could be the same fund
+  const _pmsSuggestions = findPMSSuggestions(r);
+  const pmsSuggestionBanner = _pmsSuggestions.length > 0 ? `
+    <div style="background:rgba(92,184,138,0.08);border:1px solid rgba(92,184,138,0.35);border-radius:8px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:5px">💡 Could this be an existing holding?</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;line-height:1.6">
+        This SOA may belong to an existing PMS/AIF entry using a different name. If so, select it below and click <strong>Link &amp; Update</strong> — this will update the existing entry and remember the correct account number for future uploads.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="soa-suggest-${idx}" class="modal-input" style="flex:1;min-width:200px;font-size:11px">
+          <option value="">— Select existing holding —</option>
+          ${_pmsSuggestions.map(h=>`<option value="${h.id}">${sanitize(h.fund)} · ${sanitize(h.investor)}</option>`).join('')}
+        </select>
+        <button type="button"
+          onclick="(function(){const sel=document.getElementById('soa-suggest-${idx}');const id=parseInt(sel?.value);if(!id){alert('Please select an existing holding first.');return;}_soaLinkExisting(${idx},id);})()"
+          style="background:rgba(92,184,138,0.15);border:1px solid rgba(92,184,138,0.45);color:var(--green);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap;font-weight:600">
+          Link &amp; Update
+        </button>
+      </div>
+    </div>` : '';
   const _req = (label, val) => `<div class="modal-label" style="${!val||val===0?'color:var(--red)':''}">${label}${!val||val===0?' <span style=\"color:var(--red)\">*</span>':''}</div>`;
 
   card.innerHTML = `
@@ -3714,6 +3797,7 @@ function renderSOACard(r, idx, container){
       <div style="font-size:12px;font-weight:600;color:#3a9fd4;margin-bottom:4px">⚡ Looks like a new fund is being added</div>
       <div style="font-size:11px;color:var(--text-muted)">This holding wasn't found in your current dashboard. Verify the details below and fill in any missing fields before adding.</div>
     </div>
+    ${pmsSuggestionBanner}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div>
         <div class="modal-label">Fund Name*</div>
