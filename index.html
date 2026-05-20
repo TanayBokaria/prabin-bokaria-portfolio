@@ -3509,6 +3509,47 @@ function _soaLinkExisting(idx, matchedId){
   else parent.appendChild(tempDiv.firstChild);
 }
 
+
+// ── PMS/AIF duplicate detector — runs after a successful SOA update ────────
+// Finds other PMS/AIF entries for the same investor that share significant
+// name words with the just-updated holding or the SOA fund name — these are
+// likely old duplicate rows left over from a failed earlier upload.
+function findPMSDuplicates(matchedId, soaFundName, investor){
+  const matched = portfolioData.find(h=>h.id===matchedId);
+  if(!matched) return [];
+  const GENERIC = new Set(['equity','growth','fund','strategy','india','direct','scheme','asset',
+    'capital','wealth','management','advisors','pvt','ltd','pms','aif','the','and','for',
+    'series','class','plan','option','regular','conservative','aggressive','moderate']);
+  // Collect significant words from both the SOA name AND the matched holding's name
+  const allWords = [soaFundName, matched.originalName||matched.fund||'']
+    .join(' ').toLowerCase().split(/\s+/)
+    .filter(w=>w.length>3 && !GENERIC.has(w));
+  const sigWords = [...new Set(allWords)];
+  if(sigWords.length===0) return [];
+  const invFirst = (investor||'').toLowerCase().split(' ')[0];
+  return portfolioData.filter(h=>{
+    if(!h || h.id===matchedId) return false;
+    const hType = (h.type||'').toUpperCase();
+    if(!['PMS','AIF'].includes(hType)) return false;
+    if(!h.investor.toLowerCase().includes(invFirst)) return false;
+    const hname = (h.originalName||h.fund||'').toLowerCase();
+    return sigWords.some(w=>hname.includes(w));
+  });
+}
+
+// ── One-click duplicate delete from the SOA success card ──────────────────
+// Delegates to confirmDelete (which handles localStorage + Sheets + renderAll)
+// and removes the row from the card if the user confirmed the deletion.
+async function _soaDuplicateDelete(dupId, btnEl){
+  const before = portfolioData.length;
+  await confirmDelete(dupId);
+  if(portfolioData.length < before){
+    btnEl.closest('.soa-dup-row')?.remove();
+    const banner = document.getElementById('soa-dup-banner');
+    if(banner && banner.querySelectorAll('.soa-dup-row').length===0) banner.remove();
+  }
+}
+
 function matchHolding(folio, fundName, investor){
   // Folio is the most reliable identifier — unique per investor holding
   if(folio){
@@ -3956,6 +3997,24 @@ async function applySOACard(idx, state, matchedId){
       console.log(`✓ SOA update applied: ${fname} → ₹${val.toLocaleString('en-IN')} as of ${date}`);
       renderAll();
       showSOACardSuccess(cardEl, idx, 'update', fname, val, date, sheetsWarn);
+      // ── Duplicate cleanup check (PMS/AIF only) ─────────────────────────────
+      if(h.type==='PMS' || h.type==='AIF'){
+        const _dups = findPMSDuplicates(matchedId, fname, inv);
+        if(_dups.length > 0 && cardEl){
+          const _dupRows = _dups.map(d=>`
+            <div class="soa-dup-row" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid rgba(200,169,110,0.15);gap:12px">
+              <div style="font-size:12px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sanitize(d.originalName||d.fund||'')} <span style="color:var(--text-muted);font-size:11px">· ${sanitize(shortName(d.investor))}</span></div>
+              <button class="btn-secondary" style="font-size:11px;padding:4px 10px;flex-shrink:0;border-color:rgba(224,123,106,0.4);color:var(--red)"
+                onclick="_soaDuplicateDelete(${d.id},this)">Delete</button>
+            </div>`).join('');
+          const _dupBanner = document.createElement('div');
+          _dupBanner.id = 'soa-dup-banner';
+          _dupBanner.style.cssText = 'margin-top:12px;padding:10px 14px;background:rgba(200,169,110,0.07);border:1px solid rgba(200,169,110,0.3);border-radius:8px';
+          _dupBanner.innerHTML = `<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px">🔍 Possible duplicate${_dups.length>1?'s':''} found</div><div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Th${_dups.length>1?'ese entries look':'is entry looks'} like ${_dups.length>1?'they':'it'} may be an old duplicate of the holding you just updated. Delete if so.</div>${_dupRows}`;
+          cardEl.appendChild(_dupBanner);
+        }
+      }
+
 
     } else if(state === 'new'){
       const newId = portfolioData.length > 0 ? Math.max(...portfolioData.map(h=>h.id)) + 1 : 1;
