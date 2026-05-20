@@ -3071,6 +3071,8 @@ async function extractWithGemini(rawText, fileName, memberNames){
 INVESTOR NAMES IN THIS FAMILY (use exactly as written):
 ${memberNames}
 
+IMPORTANT: Members with 'HUF' in their name (Hindu Undivided Family) are completely separate investors from the same person without HUF. If the document contains 'HUF' in the account/investor name, you MUST use the HUF member name exactly as listed above.
+
 DOCUMENT TEXT:
 ${truncated}
 
@@ -3162,11 +3164,12 @@ Rules:
 
   if(!parsed.fundName && !parsed.investor) return null;
 
-  const matchedId = matchHolding(parsed.folio||'', parsed.fundName||'', parsed.investor||'');
+  const _normInv = matchInvestorName(parsed.investor||'');
+  const matchedId = matchHolding(parsed.folio||'', parsed.fundName||'', _normInv);
   return {
     state:        matchedId ? 'update' : 'new',
     fundName:     parsed.fundName     || '',
-    investor:     matchInvestorName(parsed.investor||''),
+    investor:     _normInv,
     folio:        parsed.folio        || '',
     soaDate:      parsed.soaDate      || '',
     currentValue: parsed.currentValue || 0,
@@ -3324,7 +3327,7 @@ function parseMFStatement(text, fileName){
     const value = parseFloat(girikMatch[2].replace(/,/g,''));
     const date = normaliseDate(girikMatch[1]);
     const rawName = girikAccount?.[1]?.trim() || 'Girik PMS';
-    const rawInvestor = girikInvestor?.[0] || genericInvestor?.[1] || '';
+    const rawInvestor = girikInvestor?.[1] || genericInvestor?.[1] || ''; // [1]=capture group, not full match
     const investor = matchInvestorName(rawInvestor);
     const folio = t.match(/Account\s*:\s*(\d+)/i)?.[1] || '';
     const invested = extractInvestedAmount(t);
@@ -3412,13 +3415,14 @@ function parseMFStatement(text, fileName){
     // Calculate extraction score to drive the warning
     const fieldsFound = [fundName, investor, folio, soaDate, value>0, invested>0].filter(Boolean).length;
 
+    const _fallbackMatchId = matchHolding(folio, fundName, investor);
     results.push({
-      state: (matchHolding(folio, fundName) && fundName) ? 'update' : 'new',
+      state: (_fallbackMatchId && fundName) ? 'update' : 'new',
       fundName, investor, folio, soaDate,
       currentValue: value, invested,
       type: 'MF', category: 'Equity',
       schemeCode: '', fundHouse: extractFundHouse(fundName),
-      matchedId: matchHolding(folio, fundName, investor),
+      matchedId: _fallbackMatchId,
       source: fileName,
       partialExtraction: fieldsFound < 4,
       extractionScore: fieldsFound,
@@ -3437,7 +3441,9 @@ function parseMFStatement(text, fileName){
 function matchInvestorName(raw){
   if(!raw) return '';
   const r = raw.trim().toLowerCase();
-  for(const m of MEMBERS){ if(r.includes(m.toLowerCase())) return m; }
+  // Sort longest-first so "Prashant Bokaria HUF" is tested before "Prashant Bokaria"
+  const sorted = [...MEMBERS].sort((a,b)=>b.length-a.length);
+  for(const m of sorted){ if(r.includes(m.toLowerCase())) return m; }
   // partial match
   if(r.includes('prabin') && r.includes('huf')) return 'Prabin Bokaria HUF';
   if(r.includes('prabin'))  return 'Prabin Bokaria';
@@ -3469,7 +3475,9 @@ function findPMSSuggestions(r){
     const hType = (h.type||h.category||'').toUpperCase();
     if(!['PMS','AIF'].includes(hType)) return false;
     if(!inv || !h.investor) return false;
-    // Investor must match (first name)
+    // Investor must match — HUF investors must not cross-match with non-HUF entries
+    const soaIsHuf = inv.includes('huf');
+    if(soaIsHuf !== h.investor.toLowerCase().includes('huf')) return false;
     const firstWord = inv.split(' ')[0];
     if(!h.investor.toLowerCase().includes(firstWord)) return false;
     const hname = (h.originalName||h.fund||'').toLowerCase();
@@ -3520,7 +3528,6 @@ function findPMSDuplicates(matchedId, soaFundName, investor){
   const GENERIC = new Set(['equity','growth','fund','strategy','india','direct','scheme','asset',
     'capital','wealth','management','advisors','pvt','ltd','pms','aif','the','and','for',
     'series','class','plan','option','regular','conservative','aggressive','moderate']);
-  // Collect significant words from both the SOA name AND the matched holding's name
   const allWords = [soaFundName, matched.originalName||matched.fund||'']
     .join(' ').toLowerCase().split(/\s+/)
     .filter(w=>w.length>3 && !GENERIC.has(w));
@@ -3538,8 +3545,6 @@ function findPMSDuplicates(matchedId, soaFundName, investor){
 }
 
 // ── One-click duplicate delete from the SOA success card ──────────────────
-// Delegates to confirmDelete (which handles localStorage + Sheets + renderAll)
-// and removes the row from the card if the user confirmed the deletion.
 async function _soaDuplicateDelete(dupId, btnEl){
   const before = portfolioData.length;
   await confirmDelete(dupId);
@@ -3560,14 +3565,26 @@ function matchHolding(folio, fundName, investor){
   if(fundName){
     const fn = fundName.toLowerCase();
     const inv = (investor||'').toLowerCase();
+    // Filter out generic words that appear in most MF/PMS names to avoid false positives
+    // (e.g. "Girik Multicap Growth Equity Strategy" sharing "growth"+"equity" with Mirae funds)
+    const _MATCH_GENERIC = new Set(['equity','growth','fund','strategy','india','direct',
+      'scheme','asset','capital','wealth','management','advisors','pvt','ltd','pms','aif',
+      'the','and','for','series','class','plan','option','regular','conservative',
+      'aggressive','moderate','large','mid','small','cap','debt','balanced','hybrid',
+      'multi','flexi','dynamic','opportunities','advantage','focused','value','index']);
     const byName = portfolioData.find(h=>{
       const hname = (h.originalName||h.fund||'').toLowerCase();
-      const words = fn.split(/\s+/).filter(w=>w.length>2);
+      const words = fn.split(/\s+/).filter(w=>w.length>2 && !_MATCH_GENERIC.has(w));
+      if(words.length === 0) return false;
       const matches = words.filter(w=>hname.includes(w)).length;
       if(matches < 2) return false;
       // If investor is known, require it to match to avoid cross-investor false positives
+      // HUF awareness: "Prashant Bokaria HUF" must NOT match "Prashant Bokaria" and vice versa
       if(inv && h.investor){
         const hinv = h.investor.toLowerCase();
+        const soaIsHuf  = inv.includes('huf');
+        const holdIsHuf = hinv.includes('huf');
+        if(soaIsHuf !== holdIsHuf) return false;
         const firstWord = inv.split(' ')[0];
         return hinv.includes(firstWord);
       }
