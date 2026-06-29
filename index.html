@@ -288,6 +288,29 @@
   </div>
 </div>
 
+
+<div class="modal-overlay" id="reportIssueModal">
+  <div class="modal" style="width:540px;max-height:90vh;overflow-y:auto">
+    <h2 style="margin-bottom:16px">⚑ Report an Issue</h2>
+    <div class="modal-field">
+      <label class="modal-label">Describe the issue</label>
+      <textarea id="reportIssueDesc" class="modal-input" rows="5"
+        placeholder="What were you doing? What went wrong? Which investor / fund was involved?"
+        style="resize:vertical;font-family:inherit;font-size:13px;padding:8px"></textarea>
+    </div>
+    <div class="modal-field" style="margin-top:12px">
+      <label class="modal-label">Attach files (screenshots, statements — any type, multiple ok)</label>
+      <input type="file" id="reportIssueFiles" multiple
+        style="margin-top:6px;font-size:12px;color:var(--text-muted)">
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="modal-btn primary" onclick="submitIssueReport()">Submit Report</button>
+      <button class="modal-btn" onclick="closeModal('reportIssueModal')">Cancel</button>
+    </div>
+    <div id="reportIssueStatus" style="margin-top:10px;font-size:12px;color:var(--text-muted);display:none"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="sheetsModal">
   <div class="modal">
     <h2>Connect Google Sheets</h2>
@@ -347,6 +370,9 @@
     <button class="refresh-btn" id="exportExcelBtn" onclick="exportToExcel()" title="Export current portfolio to Excel in Priya's format" style="background:var(--surface2);border:1px solid rgba(92,184,138,0.5);color:var(--green)">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Export Excel
+    </button>
+    <button class="refresh-btn" onclick="openModal('reportIssueModal')" title="Report an issue to the dashboard administrator" style="background:var(--surface2);border:1px solid rgba(239,68,68,0.4);color:rgba(239,68,68,0.85);font-size:12px">
+      ⚑ Report Issue
     </button>
     <button class="refresh-btn" id="preflightBtn" onclick="togglePreflightPanel()" title="System health check — click to run" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);font-size:12px;">
       ⚕ Health
@@ -1206,7 +1232,7 @@ async function refreshNAVs(){
   }
 
   }catch(e){
-    console.error('refreshNAVs error:',e);
+    console.error('refreshNAVs error:',e); logError('refreshNAVs',e);
   }finally{
     await new Promise(x=>setTimeout(x,300));
     ov.classList.remove('visible');btn.disabled=false;icon.classList.remove('spin');
@@ -1315,7 +1341,7 @@ async function writePortfolioSnapshot(){
 
     if(!r.ok){
       const err = await r.json().catch(()=>({}));
-      console.error('Snapshot write error:', err);
+      console.error('Snapshot write error:', err); logError('writePortfolioSnapshot','HTTP '+r.status,{detail:JSON.stringify(err)});
       return false;
     }
     // Verify: check updatedCells in response — 0 means nothing actually persisted
@@ -1326,7 +1352,7 @@ async function writePortfolioSnapshot(){
     }
     return true;
   }catch(e){
-    console.error('writePortfolioSnapshot error:', e);
+    console.error('writePortfolioSnapshot error:', e); logError('writePortfolioSnapshot',e);
     return false;
   }
 }
@@ -1554,9 +1580,135 @@ const LS_KEY='bokaria_prabin_sheets_v2';
 const NAV_CACHE_KEY='bokaria_prabin_nav_cache';
 // ── Pre-configured credentials — pre-fill for all users ──
 const DEFAULT_SHEET_ID='1qWrqbm5za6xfvVJK-VlwKgyUTSc6nYOyxwP8Plclk0I';
+  const DASHBOARD_NAME='Prabin';
 const DEFAULT_CLIENT_ID='54722716336-puhqj8e67mf44jbi9unpm2lcgplos829.apps.googleusercontent.com';
+
+// ── Report Issue (Layer 2) ────────────────────────────────────────────────────
+async function submitIssueReport() {
+  const desc  = document.getElementById('reportIssueDesc').value.trim();
+  const files = document.getElementById('reportIssueFiles').files;
+  const statusEl = document.getElementById('reportIssueStatus');
+
+  if (!desc) {
+    statusEl.style.display='block'; statusEl.style.color='var(--red)';
+    statusEl.textContent='Please describe the issue before submitting.'; return;
+  }
+
+  statusEl.style.display='block'; statusEl.style.color='var(--text-muted)';
+  statusEl.textContent='Submitting…';
+
+  const sheetId    = sheetsConfig?.sheetId || DEFAULT_SHEET_ID;
+  const token      = sheetsConfig?.accessToken;
+  const timestamp  = new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+  const folderName = `Dashboard Issue — ${DASHBOARD_NAME} — ${timestamp}`;
+  let driveLink    = '';
+
+  // ── Upload files to Google Drive if connected ──
+  if (token && files.length > 0) {
+    try {
+      // 1. Create a folder in Drive
+      const folderRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: {'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
+        body: JSON.stringify({
+          name: folderName,
+          mimeType: 'application/vnd.google-apps.folder'
+        })
+      });
+      const folder = await folderRes.json();
+      const folderId = folder.id;
+      if (folderId) driveLink = `https://drive.google.com/drive/folders/${folderId}`;
+
+      // 2. Upload description as a text file
+      const descBlob = new Blob([`Issue Report\n${'='.repeat(60)}\nDashboard: ${DASHBOARD_NAME}\nTimestamp: ${timestamp}\n\n${desc}`], {type:'text/plain'});
+      const descMeta = JSON.stringify({name:'description.txt', parents:[folderId]});
+      const descForm = new FormData();
+      descForm.append('metadata', new Blob([descMeta],{type:'application/json'}));
+      descForm.append('file', descBlob);
+      await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method:'POST', headers:{'Authorization':`Bearer ${token}`}, body:descForm
+      });
+
+      // 3. Upload each attached file
+      for (const file of files) {
+        statusEl.textContent = `Uploading ${file.name}…`;
+        const meta = JSON.stringify({name:file.name, parents:[folderId]});
+        const form = new FormData();
+        form.append('metadata', new Blob([meta],{type:'application/json'}));
+        form.append('file', file);
+        await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+          method:'POST', headers:{'Authorization':`Bearer ${token}`}, body:form
+        });
+      }
+    } catch(de) {
+      console.warn('Drive upload failed:', de.message);
+      statusEl.textContent = 'Drive upload failed — logging to Sheet only.';
+    }
+  }
+
+  // ── Write to error_log Sheet tab ──
+  const row = [
+    timestamp, DASHBOARD_NAME, 'manual_report', '', '',
+    desc.substring(0, 500),
+    `files:${files.length} | drive:${driveLink}`,
+    'Priya'
+  ];
+  if (sheetId && token) {
+    try {
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/error_log!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        { method:'POST',
+          headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
+          body: JSON.stringify({values:[row]})
+        }
+      );
+    } catch(se) { console.warn('error_log sheet write failed:', se.message); }
+  }
+
+  statusEl.style.color = 'var(--green)';
+  statusEl.textContent = driveLink
+    ? `✓ Report submitted. Files saved to Drive. (${files.length} file${files.length!==1?'s':''})`
+    : '✓ Issue logged to Sheet. (Connect Sheets + Drive for file attachments.)';
+
+  // Reset form after short delay
+  setTimeout(() => {
+    document.getElementById('reportIssueDesc').value = '';
+    document.getElementById('reportIssueFiles').value = '';
+    statusEl.style.display = 'none';
+    closeModal('reportIssueModal');
+  }, 3000);
+}
+
 function loadSheetsConfig(){try{const s=localStorage.getItem(LS_KEY);if(s){sheetsConfig=JSON.parse(s);return true;}}catch(e){}return false;}
 function saveSheetsConfig(cfg){sheetsConfig=cfg;try{localStorage.setItem(LS_KEY,JSON.stringify({sheetId:cfg.sheetId,clientId:cfg.clientId}));}catch(e){}}
+// ── Error Logging (Layer 1) ───────────────────────────────────────────────────
+async function logError(fnName, error, context={}) {
+  // Always log to console as baseline
+  console.error(`[${fnName}]`, error, context);
+  // Write to Sheet error_log tab if connected
+  const sheetId = sheetsConfig?.sheetId || DEFAULT_SHEET_ID;
+  if (!sheetId || !sheetsConfig?.accessToken) return;
+  const row = [
+    new Date().toLocaleString('en-IN', {timeZone:'Asia/Kolkata'}),
+    DASHBOARD_NAME,
+    fnName,
+    context.investor || '',
+    context.fund    || '',
+    String(error?.message || error).substring(0, 500),
+    context.detail  || '',
+    'auto'
+  ];
+  try {
+    await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/error_log!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      { method:'POST',
+        headers:{'Authorization':`Bearer ${sheetsConfig.accessToken}`,'Content-Type':'application/json'},
+        body: JSON.stringify({ values:[row] })
+      }
+    );
+  } catch(le){ console.warn('logError sheet write failed:',le.message); }
+}
+
 function openModal(id){
   document.getElementById(id).classList.add('visible');
   // Re-apply credential pre-fill every time sheets modal opens (guards against browser clearing)
@@ -1776,7 +1928,7 @@ async function loadFromSheets(){
     renderAll();
     return synced;
   }catch(e){
-    console.error('loadFromSheets error:',e);
+    console.error('loadFromSheets error:',e); logError('loadFromSheets',e);
     document.getElementById('sheetsSyncStatus').textContent=`Sheets sync error: ${e.message}`;
   }
 }
@@ -1823,7 +1975,7 @@ async function saveToSheets(holdingId, investedToDate, value, asOfDate, updatedB
     const wr=await fetchWithTimeout(writeUrl,{method,headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({values:vals})});
     if(!wr.ok){
       const errBody=await wr.json().catch(()=>({}));
-      console.error('saveToSheets failed:', wr.status, JSON.stringify(errBody));
+      console.error('saveToSheets failed:', wr.status, JSON.stringify(errBody)); logError('saveToSheets','HTTP '+wr.status,{detail:JSON.stringify(errBody)});
       if(wr.status===401){
         sheetsConnected=false;
         updateSheetsPill('error','Sheets: Session expired');
@@ -1835,7 +1987,7 @@ async function saveToSheets(holdingId, investedToDate, value, asOfDate, updatedB
     }
     return true;
   }catch(e){
-    console.error('saveToSheets exception:',e);
+    console.error('saveToSheets exception:',e); logError('saveToSheets',e);
     alert('Sheets save error: '+e.message);
     return false;
   }
@@ -2593,7 +2745,7 @@ async function exportToExcel(){
     URL.revokeObjectURL(url);
 
   } catch(e) {
-    console.error('Export failed:', e);
+    console.error('Export failed:', e); logError('exportExcel',e);
     alert('Export failed: ' + (e.message || String(e)));
   } finally {
     if(btn){ btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export Excel'; }
@@ -2910,7 +3062,7 @@ async function handleSOAUpload(event){
       if(!extracted.length) extracted = [buildBlankResult(file.name)];
       results.push(...extracted);
     }catch(e){
-      console.error('SOA parse error:', e);
+      console.error('SOA parse error:', e); logError('parseSOA',e,{detail:currentFileName||''});
       results.push({error: true, fileName: file.name, message: e.message||String(e)});
     }
   }
