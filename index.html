@@ -1553,7 +1553,7 @@ function filterNYSE(member,btnEl){
 const LS_KEY='bokaria_prabin_sheets_v2';
 const NAV_CACHE_KEY='bokaria_prabin_nav_cache';
 // ── Pre-configured credentials — pre-fill for all users ──
-const DEFAULT_SHEET_ID='';  // Prabin family — enter Sheet ID when created
+const DEFAULT_SHEET_ID='1qWrqbm5za6xfvVJK-VlwKgyUTSc6nYOyxwP8Plclk0I';
 const DEFAULT_CLIENT_ID='54722716336-puhqj8e67mf44jbi9unpm2lcgplos829.apps.googleusercontent.com';
 function loadSheetsConfig(){try{const s=localStorage.getItem(LS_KEY);if(s){sheetsConfig=JSON.parse(s);return true;}}catch(e){}return false;}
 function saveSheetsConfig(cfg){sheetsConfig=cfg;try{localStorage.setItem(LS_KEY,JSON.stringify({sheetId:cfg.sheetId,clientId:cfg.clientId}));}catch(e){}}
