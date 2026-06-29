@@ -333,7 +333,7 @@ async function loadSnapshot(){
       const get = i => row.c[i]?.v ?? row.c[i]?.f ?? '';
       const type = String(get(4)||'');
       const obj = {
-        asOf:        String(get(0)||''),
+        asOf:        String(row.c[0]?.f || row.c[0]?.v || ''),
         investor:    String(get(1)||''),
         originalName:String(get(2)||''),
         currentName: String(get(3)||''),
