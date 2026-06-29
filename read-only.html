@@ -10,13 +10,14 @@
   <style>
     :root{
       --bg:#0d0f14;--surface:#13161e;--surface2:#1a1e2a;--border:#232839;
-      --accent:#c8a96e;--accent2:#4db8a0;--text:#e8e6e0;--text-muted:#7a7e8e;--text-dim:#4a4f62;
+      --accent:#c8a96e;--accent2:#7eb8a4;--text:#e8e6e0;--text-muted:#7a7e8e;--text-dim:#4a4f62;
       --green:#5cb88a;--red:#e07b6a;
       --prabin:#e8a838;--ritu:#4db8a0;--pranjul:#7b6fe0;--preksha:#e05c5c;--huf:#3a9fd4;
     }
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
 
+    /* HEADER */
     .header{padding:26px 40px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between;background:var(--bg);}
     .header h1{font-family:'DM Serif Display',serif;font-size:22px;font-weight:400;letter-spacing:-0.3px;}
     .header-right{display:flex;align-items:center;gap:12px;}
@@ -24,6 +25,7 @@
     .readonly-badge{font-family:'DM Mono',monospace;font-size:10px;background:rgba(92,184,138,0.1);border:1px solid rgba(92,184,138,0.3);color:var(--green);padding:4px 10px;border-radius:4px;letter-spacing:0.5px;}
     .subtitle{font-size:11px;color:var(--text-muted);font-family:'DM Mono',monospace;margin-top:4px;letter-spacing:0.5px;}
 
+    /* LOADING */
     .loading-overlay{position:fixed;inset:0;background:rgba(13,15,20,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;transition:opacity 0.4s;}
     .loading-overlay.hidden{opacity:0;pointer-events:none;}
     .loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px;}
@@ -31,10 +33,12 @@
     .loading-sub{font-size:11px;color:var(--text-muted);margin-top:6px;}
     @keyframes spin{to{transform:rotate(360deg);}}
 
+    /* ERROR STATE */
     .error-banner{background:rgba(224,123,106,0.1);border:1px solid rgba(224,123,106,0.3);color:var(--red);padding:12px 20px;border-radius:8px;font-size:12px;margin:20px 40px;display:none;}
 
     main{padding:28px 40px;max-width:1600px;margin:0 auto;}
 
+    /* SUMMARY CARDS */
     .summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;}
     .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;position:relative;overflow:hidden;}
     .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);}
@@ -47,6 +51,7 @@
     .stat-sub.gain{color:var(--green);}
     .stat-sub.loss{color:var(--red);}
 
+    /* MEMBER CARDS */
     .member-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px;}
     .member-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:15px;}
     .member-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
@@ -54,6 +59,7 @@
     .member-name{font-size:13px;font-weight:600;}
     .member-tag{font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;}
 
+    /* CHARTS */
     .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
     .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
     .panel-header{padding:13px 17px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
@@ -62,62 +68,81 @@
     .panel-body{padding:16px;}
     .chart-wrap{height:220px;display:flex;align-items:center;justify-content:center;}
 
+    /* FILTER TABS */
     .filter-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border);}
     .filter-tab{background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);padding:5px 12px;border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.15s;}
     .filter-tab:hover,.filter-tab.active{border-color:var(--accent);color:var(--accent);background:rgba(200,169,110,0.08);}
     .member-dot{width:7px;height:7px;border-radius:50%;display:inline-block;}
 
+    /* HOLDINGS TABLE */
     .table-scroll{overflow-x:auto;}
     .holdings-table{width:100%;border-collapse:collapse;}
     .holdings-table thead th{padding:9px 12px;text-align:left;font-size:10px;font-family:'DM Mono',monospace;color:var(--text-muted);letter-spacing:0.6px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap;}
-    .holdings-table tbody tr{border-bottom:1px solid var(--border);transition:background 0.1s;}
+    .holdings-table tbody tr{border-bottom:1px solid var(--border);transition:background 0.15s;}
     .holdings-table tbody tr:hover{background:var(--surface2);}
-    .holdings-table tbody td{padding:10px 12px;font-size:12px;vertical-align:middle;}
-    .fund-name{font-size:12px;font-weight:500;color:var(--text);}
-    .fund-house{font-size:11px;color:var(--text-muted);font-family:'DM Mono',monospace;margin-top:2px;}
-    .amount{font-family:'DM Mono',monospace;font-size:12px;}
+    .holdings-table tbody td{padding:10px 12px;font-size:12px;vertical-align:top;}
+    .fund-name{font-weight:600;font-size:12px;margin-bottom:2px;}
+    .fund-house{font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;}
+    .tag{font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:3px;font-weight:500;}
+    .tag-mf{background:rgba(92,184,138,0.12);color:var(--green);border:1px solid rgba(92,184,138,0.2);}
+    .tag-pms{background:rgba(200,169,110,0.12);color:var(--accent);border:1px solid rgba(200,169,110,0.2);}
+    .tag-aif{background:rgba(155,142,196,0.12);color:#9b8ec4;border:1px solid rgba(155,142,196,0.2);}
+    .tag-nyse{background:rgba(74,158,202,0.12);color:#4a9eca;border:1px solid rgba(74,158,202,0.2);}
+    .amount{font-family:'DM Mono',monospace;}
     .gain{color:var(--green);}
     .loss{color:var(--red);}
     .neutral{color:var(--text-muted);}
-    .tag{font-size:9px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:3px;letter-spacing:0.5px;}
-    .tag-mf{background:rgba(46,204,113,0.12);color:#2ecc71;border:1px solid rgba(46,204,113,0.25);}
-    .tag-pms{background:rgba(231,76,60,0.12);color:#e74c3c;border:1px solid rgba(231,76,60,0.25);}
-    .tag-aif{background:rgba(155,89,182,0.12);color:#9b59b6;border:1px solid rgba(155,89,182,0.25);}
-    .status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:3px;}
-    .live-dot{background:var(--green);}
+    .status-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:3px;}
+    .live-dot{background:var(--green);box-shadow:0 0 4px var(--green);}
     .soa-dot{background:var(--accent);}
-    .table-count{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);background:var(--surface2);border:1px solid var(--border);padding:3px 8px;border-radius:4px;}
+    .table-count{font-family:'DM Mono',monospace;font-size:10px;background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);padding:3px 8px;border-radius:4px;}
 
-    .member-stat{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);}
-    .member-stat:last-child{border-bottom:none;}
-    .member-stat-label{font-size:11px;color:var(--text-muted);}
-    .member-stat-value{font-family:'DM Mono',monospace;font-size:11px;}
-
-    .page-footer{text-align:center;padding:20px;font-size:11px;color:var(--text-dim);font-family:'DM Mono',monospace;border-top:1px solid var(--border);margin-top:20px;}
 
     /* AB EQUITY HOLDINGS */
     .ab-footer{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:24px;flex-wrap:wrap;font-size:12px;}
+
+
+    /* FOOTER */
+    .page-footer{text-align:center;padding:30px;font-size:11px;color:var(--text-dim);font-family:'DM Mono',monospace;border-top:1px solid var(--border);margin-top:40px;}
+
+    /* RESPONSIVE */
+    @media(max-width:900px){
+      .summary-grid{grid-template-columns:1fr 1fr;}
+      .member-grid{grid-template-columns:1fr 1fr;}
+      .two-col{grid-template-columns:1fr;}
+      main{padding:16px;}
+      .header{padding:16px;}
+    }
+    @media(max-width:600px){
+      .summary-grid{grid-template-columns:1fr;}
+      .member-grid{grid-template-columns:1fr 1fr;}
+      .holdings-table th:nth-child(6),.holdings-table td:nth-child(6),
+      .holdings-table th:nth-child(9),.holdings-table td:nth-child(9),
+      .holdings-table th:nth-child(10),.holdings-table td:nth-child(10),
+      .holdings-table th:nth-child(11),.holdings-table td:nth-child(11){display:none;}
+    }
   </style>
 </head>
 <body>
 
+<!-- LOADING OVERLAY -->
 <div class="loading-overlay" id="loadingOverlay">
   <div class="loading-spinner"></div>
   <div class="loading-text">Loading Portfolio</div>
-  <div class="loading-sub" id="loadingSub">Connecting to sheet...</div>
+  <div class="loading-sub" id="loadingSub">Fetching latest data from Google Sheets...</div>
 </div>
 
-<header class="header">
+<!-- HEADER -->
+<div class="header">
   <div class="header-left">
     <h1>Prabin Bokaria Family Portfolio</h1>
-    <div class="subtitle" id="headerSubtitle">— HOLDINGS · 5 INVESTORS · AS AT —</div>
+    <div class="subtitle" id="headerSubtitle">Loading...</div>
   </div>
   <div class="header-right">
-    <div class="as-of-pill" id="asOfPill">As of —</div>
-    <div class="as-of-pill" id="sheetsSyncStatus">Loading...</div>
-    <div class="readonly-badge">READ ONLY</div>
+    <span class="readonly-badge">READ ONLY</span>
+    <span class="as-of-pill" id="asOfPill">—</span>
   </div>
-</header>
+</div>
 
 <div class="error-banner" id="errorBanner"></div>
 
@@ -127,63 +152,55 @@
     <div class="stat-card">
       <div class="stat-label">Total Invested</div>
       <div class="stat-value" id="totalInvested">—</div>
-      <div class="stat-sub" id="totalFunds">— funds</div>
-    </div>
-    <div class="stat-card green">
-      <div class="stat-label">Current Value</div>
-      <div class="stat-value" id="totalValue">—</div>
-      <div class="stat-sub gain" id="totalGainPct">—</div>
+      <div class="stat-sub" id="totalHoldings">—</div>
     </div>
     <div class="stat-card teal">
-      <div class="stat-label">Total Gain / Loss</div>
-      <div class="stat-value" id="totalGain">—</div>
-      <div class="stat-sub" id="totalGainAbs">—</div>
+      <div class="stat-label">Current Value</div>
+      <div class="stat-value" id="totalCurrent">—</div>
+      <div class="stat-sub" id="totalGainAmt">—</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Overall Return</div>
+      <div class="stat-value" id="totalReturn">—</div>
+      <div class="stat-sub" id="returnSub">since inception</div>
     </div>
     <div class="stat-card purple">
-      <div class="stat-label">Members</div>
-      <div class="stat-value">5</div>
-      <div class="stat-sub">Prabin · Ritu · Pranjul · Preksha · HUF</div>
+      <div class="stat-label">Data Freshness</div>
+      <div class="stat-value" id="navCoverage">—</div>
+      <div class="stat-sub" id="sheetsSyncStatus">Loading from Sheets...</div>
     </div>
   </div>
 
   <!-- MEMBER CARDS -->
-  <div class="member-grid" id="memberGrid"></div>
+  <div class="member-grid" id="memberCards"></div>
 
   <!-- CHARTS -->
   <div class="two-col">
     <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">Allocation by Member</div>
-        <div class="panel-badge" id="memberChartBadge">—</div>
-      </div>
-      <div class="panel-body">
-        <div class="chart-wrap"><canvas id="memberChart"></canvas></div>
-      </div>
+      <div class="panel-header"><div class="panel-title">By Investor</div><div class="panel-badge">CURRENT VALUE</div></div>
+      <div class="panel-body"><div class="chart-wrap"><canvas id="memberChart"></canvas></div></div>
     </div>
     <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">Allocation by Category</div>
-        <div class="panel-badge" id="categoryChartBadge">—</div>
-      </div>
-      <div class="panel-body">
-        <div class="chart-wrap"><canvas id="categoryChart"></canvas></div>
-      </div>
+      <div class="panel-header"><div class="panel-title">By Asset Class</div><div class="panel-badge">CURRENT VALUE</div></div>
+      <div class="panel-body"><div class="chart-wrap"><canvas id="categoryChart"></canvas></div></div>
     </div>
   </div>
 
   <!-- HOLDINGS TABLE -->
-  <div class="panel" style="margin-bottom:40px">
+  <div class="panel" style="margin-bottom:24px">
     <div class="panel-header">
       <div class="panel-title">Holdings</div>
-      <div class="table-count" id="holdingsCount">— FUNDS</div>
-    </div>
-    <div class="filter-tabs" id="holdingsFilter">
-      <button class="filter-tab active" onclick="filterHoldings('all',this)">All Members</button>
-      <button class="filter-tab" onclick="filterHoldings('Prabin Bokaria',this)"><span class="member-dot" style="background:var(--prabin)"></span>Prabin</button>
-      <button class="filter-tab" onclick="filterHoldings('Ritu Bokaria',this)"><span class="member-dot" style="background:var(--ritu)"></span>Ritu</button>
-      <button class="filter-tab" onclick="filterHoldings('Pranjul Bokaria',this)"><span class="member-dot" style="background:var(--pranjul)"></span>Pranjul</button>
-      <button class="filter-tab" onclick="filterHoldings('Preksha Bokaria',this)"><span class="member-dot" style="background:var(--preksha)"></span>Preksha</button>
-      <button class="filter-tab" onclick="filterHoldings('Prabin Bokaria HUF',this)"><span class="member-dot" style="background:var(--huf)"></span>HUF</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="filter-tabs" style="padding:0;border:none;" id="holdingsFilter">
+          <button class="filter-tab active" onclick="filterHoldings('all',this)">All</button>
+          <button class="filter-tab" onclick="filterHoldings('Prabin Bokaria',this)"><span class="member-dot" style="background:var(--prabin)"></span>Prabin</button>
+          <button class="filter-tab" onclick="filterHoldings('Ritu Bokaria',this)"><span class="member-dot" style="background:var(--ritu)"></span>Ritu</button>
+          <button class="filter-tab" onclick="filterHoldings('Pranjul Bokaria',this)"><span class="member-dot" style="background:var(--pranjul)"></span>Pranjul</button>
+          <button class="filter-tab" onclick="filterHoldings('Preksha Bokaria',this)"><span class="member-dot" style="background:var(--preksha)"></span>Preksha</button>
+          <button class="filter-tab" onclick="filterHoldings('Prabin Bokaria HUF',this)"><span class="member-dot" style="background:var(--huf)"></span>HUF</button>
+        </div>
+        <div class="table-count" id="holdingsCount">— FUNDS</div>
+      </div>
     </div>
     <div class="table-scroll">
       <table class="holdings-table">
@@ -258,9 +275,9 @@ const SHEET_ID = '1qWrqbm5za6xfvVJK-VlwKgyUTSc6nYOyxwP8Plclk0I';
 const SNAPSHOT_TAB = 'portfolio_snapshot';
 
 const MEMBER_META = {
-  'Prabin Bokaria':     {color:'#e8a838', short:'PrB', label:'Father'},
+  'Prabin Bokaria':     {color:'#e8a838', short:'Pb',  label:'Father'},
   'Ritu Bokaria':       {color:'#4db8a0', short:'RB',  label:'Mother'},
-  'Pranjul Bokaria':    {color:'#7b6fe0', short:'PjB', label:'Son'},
+  'Pranjul Bokaria':    {color:'#7b6fe0', short:'PJ',  label:'Son'},
   'Preksha Bokaria':    {color:'#e05c5c', short:'PkB', label:'Daughter'},
   'Prabin Bokaria HUF': {color:'#3a9fd4', short:'HUF', label:'HUF'},
 };
@@ -268,7 +285,7 @@ const MEMBER_META = {
 // ═══════════════════════════════════
 // STATE
 // ═══════════════════════════════════
-let allHoldings = [];
+let allHoldings = [];   // MF/PMS/AIF rows
 let holdingsFilter = 'all';
 let abHoldings = [];   // AB direct equity holdings
 let abFilter = 'all';
@@ -286,9 +303,9 @@ const fmtL   = v => {
 };
 const fmtExact = v => v===null||v===undefined||isNaN(v) ? '—' :
   '₹' + v.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
-const gainClass  = v => v > 0 ? 'gain' : v < 0 ? 'loss' : 'neutral';
+const gainClass = v => v > 0 ? 'gain' : v < 0 ? 'loss' : 'neutral';
 const gainPrefix = v => v > 0 ? '+' : '';
-const shortName  = n => n.replace(' Bokaria','').trim() || n;
+const shortName = n => n.replace(' Bokaria','').replace(' HUF',' HUF').trim()||n;
 
 // ═══════════════════════════════════
 // LOAD FROM PUBLIC SHEET
@@ -296,183 +313,189 @@ const shortName  = n => n.replace(' Bokaria','').trim() || n;
 async function loadSnapshot(){
   const sub = document.getElementById('loadingSub');
   try{
+    // Google Sheets public JSON export — works with "Anyone with link can view"
     const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(SNAPSHOT_TAB)}`;
     sub.textContent = 'Reading portfolio snapshot...';
     const r = await fetch(url);
     if(!r.ok) throw new Error('Sheet fetch failed: ' + r.status);
     const text = await r.text();
+    // Google wraps the JSON in a callback — strip it
     const json = JSON.parse(text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\)/)[1]);
 
     if(!json?.table?.rows?.length) throw new Error('No data found in portfolio_snapshot tab');
 
+    const cols = json.table.cols.map(c => c.label);
+    const rows = json.table.rows;
+
     allHoldings = [];
-    json.table.rows.forEach(row => {
+
+    rows.forEach(row => {
       const get = i => row.c[i]?.v ?? row.c[i]?.f ?? '';
       const type = String(get(4)||'');
-      if(type === 'NYSE') return; // skip NYSE rows (none expected for Prabin)
-      allHoldings.push({
-        asOf:         String(get(0)||''),
-        investor:     String(get(1)||''),
-        originalName: String(get(2)||''),
-        currentName:  String(get(3)||''),
+      const obj = {
+        asOf:        String(get(0)||''),
+        investor:    String(get(1)||''),
+        originalName:String(get(2)||''),
+        currentName: String(get(3)||''),
         type,
-        category:     String(get(5)||''),
-        folio:        String(get(6)||''),
-        invested:     parseFloat(get(7))||0,
-        currentValue: parseFloat(get(8))||0,
-        gain:         parseFloat(get(9))||0,
-        returnPct:    String(get(10)||''),
-        cagr:         String(get(11)||''),
-        nav:          String(get(12)||''),
-        navDate:      String(get(13)||''),
-        purchaseDate: String(get(14)||''),
+        category:    String(get(5)||''),
+        folio:       String(get(6)||''),
+        invested:    parseFloat(get(7))||0,
+        currentValue:parseFloat(get(8))||0,
+        gain:        parseFloat(get(9))||0,
+        returnPct:   String(get(10)||''),
+        cagr:        String(get(11)||''),
+        nav:         String(get(12)||''),
+        navDate:     String(get(13)||''),
+        purchaseDate:String(get(14)||''),
         holdingPeriod:String(get(15)||''),
-        schemeCode:   String(get(16)||''),
-      });
+        schemeCode:  String(get(16)||''),
+        currency:    String(get(17)||''),
+        usdValue:    String(get(18)||''),
+      };
+      else allHoldings.push(obj);
     });
 
+    // Get as-of timestamp from first row
     const asOf = allHoldings[0]?.asOf || '—';
     document.getElementById('asOfPill').textContent = 'As of ' + asOf;
     document.getElementById('sheetsSyncStatus').textContent = 'Live · refreshed ' + asOf;
     document.getElementById('headerSubtitle').textContent =
       allHoldings.length + ' HOLDINGS · 5 INVESTORS · AS AT ' + asOf.toUpperCase();
 
+    // Extract FX rate from NYSE rows (stored in currency column)
+    // Derive from invested INR / (qty * unitCost) if available, or just show from nav
+    // Actually just calculate from first NYSE row ratio
     renderAll();
     hideLoading();
-    loadABHoldings(); // Load AB equity holdings asynchronously
+    loadABHoldings(); // Load AB equity holdings asynchronously — updates panel when ready
 
   }catch(e){
-    console.error(e);
     hideLoading();
-    const eb = document.getElementById('errorBanner');
-    eb.textContent = 'Could not load portfolio data: ' + e.message + '. Make sure the Google Sheet is shared as "Anyone with link can view".';
-    eb.style.display = 'block';
-    document.getElementById('sheetsSyncStatus').textContent = 'Error loading';
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = 'block';
+    banner.textContent = '⚠ Could not load portfolio data: ' + e.message +
+      '. Please ensure the Google Sheet is publicly accessible and the portfolio_snapshot tab has data (hit Refresh NAVs on the main dashboard first).';
+    console.error(e);
   }
 }
 
 function hideLoading(){
-  const ol = document.getElementById('loadingOverlay');
-  ol.classList.add('hidden');
-  setTimeout(()=>ol.remove(), 500);
+  document.getElementById('loadingOverlay').classList.add('hidden');
 }
 
 // ═══════════════════════════════════
-// RENDER
+// TOTALS
+// ═══════════════════════════════════
+function portfolioTotals(){
+  const i = allHoldings.reduce((a,h)=>a+h.invested,0) +
+            abHoldings.reduce((a,h)=>a+h.invested,0);
+  const c = allHoldings.reduce((a,h)=>a+h.currentValue,0) +
+            abHoldings.reduce((a,h)=>a+h.currentValue,0);
+  return {invested:i, current:c, gain:c-i, gainPct:i>0?((c-i)/i)*100:0};
+}
+
+function memberTotals(){
+  const t = {};
+  for(const m of Object.keys(MEMBER_META)){
+    const mf  = allHoldings.filter(h=>h.investor===m);
+    const ab  = abHoldings.filter(h=>h.investor===m);
+    const inv = mf.reduce((a,h)=>a+h.invested,0) + ab.reduce((a,h)=>a+h.invested,0);
+    const cur = mf.reduce((a,h)=>a+h.currentValue,0) + ab.reduce((a,h)=>a+h.currentValue,0);
+    t[m] = {invested:inv, current:cur, gain:cur-inv, gainPct:inv>0?((cur-inv)/inv)*100:0,
+            count: mf.length + ab.length};
+  }
+  return t;
+}
+
+function categoryTotals(){
+  const c = {};
+  allHoldings.forEach(h=>{
+    const k = h.type==='PMS'?'PMS':h.type==='AIF'?'AIF':h.category;
+    c[k] = (c[k]||0) + h.currentValue;
+  });
+  const abTotal = abHoldings.reduce((a,h)=>a+h.currentValue,0);
+  if(abTotal>0) c['Direct Equity'] = (c['Direct Equity']||0) + abTotal;
+  return c;
+}
+
+// ═══════════════════════════════════
+// RENDER ALL
 // ═══════════════════════════════════
 function renderAll(){
-  renderSummaryCards();
+  renderSummary();
   renderMemberCards();
   renderCharts();
   renderHoldings();
   renderAB();
 }
 
-function memberTotals(){
-  const t = {};
-  [...allHoldings, ...abHoldings].forEach(h=>{
-    if(!t[h.investor]) t[h.investor]={invested:0,value:0,gain:0,count:0};
-    t[h.investor].invested += h.invested||0;
-    t[h.investor].value    += h.currentValue||0;
-    t[h.investor].gain     += (h.gain != null ? h.gain : (h.currentValue||0)-(h.invested||0));
-    t[h.investor].count++;
-  });
-  return t;
-}
-
-function categoryTotals(){
-  const t = {};
-  allHoldings.forEach(h=>{
-    const cat = h.category || h.type || 'Other';
-    t[cat] = (t[cat]||0) + h.currentValue;
-  });
-  const abTotal = abHoldings.reduce((a,h)=>a+h.currentValue,0);
-  if(abTotal>0) t['Direct Equity'] = (t['Direct Equity']||0) + abTotal;
-  return t;
-}
-
-function renderSummaryCards(){
-  const totals = memberTotals();
-  const inv = Object.values(totals).reduce((a,b)=>a+b.invested,0);
-  const val = Object.values(totals).reduce((a,b)=>a+b.value,0);
-  const gain = val - inv;
-  const gainPct = inv > 0 ? (gain/inv*100) : 0;
-
-  document.getElementById('totalInvested').textContent = fmtCr(inv);
-  document.getElementById('totalValue').textContent    = fmtCr(val);
-  document.getElementById('totalGain').textContent     = fmtL(gain);
-  document.getElementById('totalFunds').textContent    = allHoldings.length + ' funds';
-  document.getElementById('totalGainPct').className    = 'stat-sub ' + gainClass(gain);
-  document.getElementById('totalGainPct').textContent  = gainPrefix(gainPct) + gainPct.toFixed(2) + '% overall return';
-  document.getElementById('totalGainAbs').className    = 'stat-sub ' + gainClass(gain);
-  document.getElementById('totalGainAbs').textContent  = gainPrefix(gain) + fmtExact(gain);
+function renderSummary(){
+  const t = portfolioTotals();
+  document.getElementById('totalInvested').textContent = fmtCr(t.invested);
+  document.getElementById('totalCurrent').textContent  = fmtCr(t.current);
+  document.getElementById('totalGainAmt').textContent  = gainPrefix(t.gain) + fmtCr(t.gain) + ' total gain';
+  document.getElementById('totalGainAmt').className    = 'stat-sub ' + gainClass(t.gain);
+  document.getElementById('totalReturn').textContent   = gainPrefix(t.gainPct) + t.gainPct.toFixed(1) + '%';
+  document.getElementById('totalReturn').className     = 'stat-value ' + gainClass(t.gain);
+  const live = allHoldings.filter(h=>h.schemeCode && h.schemeCode !== '—').length;
+  document.getElementById('navCoverage').textContent   = live + ' live NAVs';
+  document.getElementById('totalHoldings').textContent = 'Across ' + allHoldings.length + ' holdings';
 }
 
 function renderMemberCards(){
   const totals = memberTotals();
-  const grid = document.getElementById('memberGrid');
-  grid.innerHTML = '';
-  Object.entries(MEMBER_META).forEach(([name, meta])=>{
-    const t = totals[name] || {invested:0, value:0, gain:0, count:0};
-    const gainPct = t.invested > 0 ? (t.gain/t.invested*100) : 0;
-    const div = document.createElement('div');
-    div.className = 'member-card';
-    div.innerHTML = `
+  const container = document.getElementById('memberCards');
+  container.innerHTML = '';
+  for(const [name, meta] of Object.entries(MEMBER_META)){
+    const t = totals[name];
+    if(!t || t.count === 0) continue;
+    const card = document.createElement('div');
+    card.className = 'member-card';
+    card.innerHTML = `
       <div class="member-header">
         <div class="member-avatar" style="background:${meta.color}">${meta.short}</div>
         <div>
           <div class="member-name">${shortName(name)}</div>
-          <div class="member-tag">${meta.label}</div>
+          <div class="member-tag">${meta.label} · ${t.count} holdings</div>
         </div>
       </div>
-      <div class="member-stat">
-        <span class="member-stat-label">Invested</span>
-        <span class="member-stat-value">${fmtL(t.invested)}</span>
-      </div>
-      <div class="member-stat">
-        <span class="member-stat-label">Current</span>
-        <span class="member-stat-value" style="color:var(--text)">${fmtL(t.value)}</span>
-      </div>
-      <div class="member-stat">
-        <span class="member-stat-label">Gain</span>
-        <span class="member-stat-value ${gainClass(t.gain)}">${gainPrefix(t.gain)}${fmtL(t.gain)}</span>
-      </div>
-      <div class="member-stat">
-        <span class="member-stat-label">Return</span>
-        <span class="member-stat-value ${gainClass(gainPct)}">${gainPrefix(gainPct)}${gainPct.toFixed(1)}%</span>
-      </div>
-      <div class="member-stat">
-        <span class="member-stat-label">Funds</span>
-        <span class="member-stat-value" style="color:var(--text-muted)">${t.count}</span>
-      </div>`;
-    grid.appendChild(div);
-  });
+      <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;font-family:'DM Mono',monospace">Current Value</div>
+      <div style="font-size:14px;font-weight:600;font-family:'DM Mono',monospace;color:${meta.color}">${fmtCr(t.current)}</div>
+      <div style="font-size:11px;margin-top:1px" class="${gainClass(t.gain)}">${gainPrefix(t.gain)}${fmtL(t.gain)} (${gainPrefix(t.gainPct)}${t.gainPct.toFixed(1)}%)</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:5px">Invested: ${fmtCr(t.invested)}</div>`;
+    container.appendChild(card);
+  }
 }
 
 function renderCharts(){
   const totals = memberTotals();
-  const mV = Object.values(MEMBER_META).map((_,i)=>
-    Object.values(totals)[i]?.value || 0);
-  const mLabels = Object.keys(MEMBER_META).map(n=>shortName(n));
-  const mColors = Object.values(MEMBER_META).map(m=>m.color);
-  const totalVal = mV.reduce((a,b)=>a+b,0);
-  document.getElementById('memberChartBadge').textContent = fmtCr(totalVal);
-  document.getElementById('categoryChartBadge').textContent = fmtCr(totalVal);
+  const mL=[], mV=[], mC=[];
+  for(const [name, meta] of Object.entries(MEMBER_META)){
+    const t = totals[name];
+    if(!t || t.current === 0) continue;
+    mL.push(shortName(name)); mV.push(t.current); mC.push(meta.color);
+  }
 
   if(memberChartInst) memberChartInst.destroy();
   memberChartInst = new Chart(document.getElementById('memberChart'),{
     type:'doughnut',
-    data:{labels:mLabels,datasets:[{data:mV,backgroundColor:mColors,borderColor:'#0d0f14',borderWidth:3,hoverOffset:8}]},
+    data:{labels:mL,datasets:[{data:mV,backgroundColor:mC,borderColor:'#0d0f14',borderWidth:3,hoverOffset:8}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{
       legend:{position:'right',labels:{color:'#7a7e8e',font:{family:'DM Sans',size:11},padding:12,boxWidth:10}},
-      tooltip:{callbacks:{label:ctx=>' '+fmtCr(ctx.raw)+' ('+((ctx.raw/totalVal)*100).toFixed(1)+'%)'}}
+      tooltip:{callbacks:{label:ctx=>' '+fmtCr(ctx.raw)+' ('+((ctx.raw/mV.reduce((a,b)=>a+b,0))*100).toFixed(1)+'%)'}}
     }}
   });
 
   const cats = categoryTotals();
   const catC = {
-    'Equity':'#2ecc71','Debt':'#f39c12','PMS':'#e74c3c','AIF':'#9b59b6',
-    'Debt-Others':'#1abc9c','EQ-Debt Tax':'#e67e22','NYSE':'#3498db','Hybrid':'#fd79a8','Direct Equity':'#e07b6a'
+    'Equity':     '#2ecc71',
+    'Debt':       '#f39c12',
+    'PMS':        '#e74c3c',
+    'AIF':        '#9b59b6',
+    'Debt-Others':'#1abc9c',
+    'EQ-Debt Tax':'#e67e22',
+    'Hybrid':     '#fd79a8',
   };
   if(categoryChartInst) categoryChartInst.destroy();
   categoryChartInst = new Chart(document.getElementById('categoryChart'),{
@@ -485,7 +508,7 @@ function renderCharts(){
     },
     options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{
       legend:{position:'right',labels:{color:'#7a7e8e',font:{family:'DM Sans',size:11},padding:12,boxWidth:10}},
-      tooltip:{callbacks:{label:ctx=>' '+fmtCr(ctx.raw)+' ('+(ctx.raw/Object.values(cats).reduce((a,b)=>a+b,0)*100).toFixed(1)+'%)'}}
+      tooltip:{callbacks:{label:ctx=>' '+fmtCr(ctx.raw)+' ('+((ctx.raw/Object.values(cats).reduce((a,b)=>a+b,0))*100).toFixed(1)+'%)'}}
     }}
   });
 }
@@ -496,13 +519,16 @@ function renderHoldings(){
   document.getElementById('holdingsCount').textContent = data.length + ' FUNDS';
   const tbody = document.getElementById('holdingsBody');
   tbody.innerHTML = '';
+  const meta = MEMBER_META;
+
   data.forEach(h=>{
-    const m = MEMBER_META[h.investor];
+    const m = meta[h.investor];
     const hasNameChange = h.currentName && h.currentName !== h.originalName && h.currentName !== '—';
     const isLive = h.schemeCode && h.schemeCode !== '—';
     const tagClass = h.type==='MF'?'tag-mf':h.type==='PMS'?'tag-pms':'tag-aif';
     const gainVal = h.gain;
     const gainPct = h.invested>0 ? (gainVal/h.invested)*100 : 0;
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>
@@ -519,12 +545,12 @@ function renderHoldings(){
       <td><span class="tag ${tagClass}">${h.type}</span></td>
       <td style="text-align:right"><span class="amount">${fmtExact(h.invested)}</span></td>
       <td style="text-align:right"><span class="amount">${fmtExact(h.currentValue)}</span>
-        ${h.navDate&&h.navDate!=='—'?`<div style="font-size:10px;color:var(--text-dim)">${h.navDate}</div>`:''}
+        ${h.navDate && h.navDate!=='—'?`<div style="font-size:10px;color:var(--text-dim)">${h.navDate}</div>`:''}
       </td>
       <td style="text-align:right">
-        ${h.nav&&h.nav!=='—'
-          ?`<span style="font-family:'DM Mono',monospace;font-size:12px">₹${h.nav}</span>`
-          :`<span style="color:var(--text-dim)">—</span>`}
+        ${h.nav && h.nav!=='—'
+          ? `<span style="font-family:'DM Mono',monospace;font-size:12px">₹${h.nav}</span>`
+          : `<span style="color:var(--text-dim)">—</span>`}
       </td>
       <td style="text-align:right">
         <div class="${gainClass(gainVal)}" style="font-family:'DM Mono',monospace;font-size:12px">${gainPrefix(gainVal)}${fmtExact(gainVal)}</div>
@@ -532,14 +558,14 @@ function renderHoldings(){
       </td>
       <td style="text-align:right"><span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-muted)">${h.holdingPeriod||'—'}</span></td>
       <td style="text-align:right">
-        ${h.cagr&&h.cagr!=='—'
-          ?`<span class="${gainClass(parseFloat(h.cagr))}" style="font-family:'DM Mono',monospace;font-size:12px">${h.cagr}</span>`
-          :`<span style="color:var(--text-dim)">—</span>`}
+        ${h.cagr && h.cagr!=='—'
+          ? `<span class="${gainClass(parseFloat(h.cagr))}" style="font-family:'DM Mono',monospace;font-size:12px">${h.cagr}</span>`
+          : '<span style="color:var(--text-dim)">—</span>'}
       </td>
       <td style="text-align:center">
         ${isLive
-          ?`<span class="status-dot live-dot"></span><span style="font-size:11px;color:var(--green)">Live</span>`
-          :`<span class="status-dot soa-dot"></span><span style="font-size:11px;color:var(--accent)">SOA</span>`}
+          ? `<span class="status-dot live-dot"></span><span style="font-size:11px;color:var(--green)">Live</span>`
+          : `<span class="status-dot soa-dot"></span><span style="font-size:11px;color:var(--accent)">SOA</span>`}
       </td>`;
     tbody.appendChild(tr);
   });
@@ -552,7 +578,8 @@ function filterHoldings(member, btn){
   renderHoldings();
 }
 
-const renderSummary_ = renderSummaryCards;
+// Alias so loadABHoldings can trigger a summary re-render by name
+const renderSummary_ = renderSummary;
 
 // ═══════════════════════════════════
 // AB HOLDINGS — load from public sheet
@@ -648,7 +675,12 @@ function filterAB(member, btn){
   renderAB();
 }
 
-document.addEventListener('DOMContentLoaded', () => { loadSnapshot(); });
+// ═══════════════════════════════════
+// INIT
+// ═══════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  loadSnapshot();
+});
 </script>
 </body>
 </html>
