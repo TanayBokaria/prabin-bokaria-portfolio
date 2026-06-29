@@ -353,7 +353,7 @@ async function loadSnapshot(){
         currency:    String(get(17)||''),
         usdValue:    String(get(18)||''),
       };
-      else allHoldings.push(obj);
+      allHoldings.push(obj);
     });
 
     // Get as-of timestamp from first row
