@@ -1598,7 +1598,7 @@ async function submitIssueReport() {
   statusEl.textContent='Submitting…';
 
   const sheetId    = sheetsConfig?.sheetId || DEFAULT_SHEET_ID;
-  const token      = sheetsConfig?.accessToken;
+  let token        = sheetsConfig?.accessToken;
   const timestamp  = new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
   const folderName = `Dashboard Issue — ${DASHBOARD_NAME} — ${timestamp}`;
   let driveLink    = '';
@@ -1610,23 +1610,43 @@ async function submitIssueReport() {
 
   if (token && files.length > 0) {
     try {
-      // 1. Create a folder in Drive — check response status explicitly
-      const folderRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      // 1. Create a folder in Drive — check response status, auto-retry once on 401/403
+      let activeToken = token;
+      let folderRes = await fetch('https://www.googleapis.com/drive/v3/files', {
         method: 'POST',
-        headers: {'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
+        headers: {'Authorization':`Bearer ${activeToken}`,'Content-Type':'application/json'},
         body: JSON.stringify({
           name: folderName,
           mimeType: 'application/vnd.google-apps.folder'
         })
       });
+      if (folderRes.status === 401 || folderRes.status === 403) {
+        statusEl.textContent = 'Refreshing Drive access…';
+        const refreshed = await silentTokenRefresh();
+        if (refreshed && sheetsConfig?.accessToken) {
+          activeToken = sheetsConfig.accessToken;
+          folderRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+            method: 'POST',
+            headers: {'Authorization':`Bearer ${activeToken}`,'Content-Type':'application/json'},
+            body: JSON.stringify({
+              name: folderName,
+              mimeType: 'application/vnd.google-apps.folder'
+            })
+          });
+        }
+      }
       if (!folderRes.ok) {
         const errBody = await folderRes.json().catch(()=>({}));
-        throw new Error(`Folder creation failed (HTTP ${folderRes.status}): ${errBody?.error?.message || 'unknown error'}`);
+        const isPermissionIssue = folderRes.status === 401 || folderRes.status === 403;
+        throw new Error(isPermissionIssue
+          ? 'Drive permission needed — reconnect Sheets once to grant file upload access, then try again.'
+          : `Folder creation failed (HTTP ${folderRes.status}): ${errBody?.error?.message || 'unknown error'}`);
       }
       const folder = await folderRes.json();
       const folderId = folder.id;
       if (!folderId) throw new Error('Folder creation returned no ID');
       driveLink = `https://drive.google.com/drive/folders/${folderId}`;
+      token = activeToken; // use refreshed token for subsequent uploads in this submission
 
       // 2. Upload description as a text file — check response status
       const descBlob = new Blob([`Issue Report\n${'='.repeat(60)}\nDashboard: ${DASHBOARD_NAME}\nTimestamp: ${timestamp}\n\n${desc}`], {type:'text/plain'});
@@ -1774,7 +1794,7 @@ async function connectSheets(){
   }
   google.accounts.oauth2.initTokenClient({
     client_id:clientId,
-    scope:'https://www.googleapis.com/auth/spreadsheets',
+    scope:'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
     callback:async(tok)=>{
       if(tok.error){statusEl.style.color='var(--red)';statusEl.textContent='Sign-in failed: '+tok.error;return;}
       saveSheetsConfig({sheetId:sheetId||DEFAULT_SHEET_ID,clientId,accessToken:tok.access_token});
@@ -1797,7 +1817,7 @@ async function silentTokenRefresh(){
     try{
       google.accounts.oauth2.initTokenClient({
         client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/spreadsheets',
+        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
         prompt: '', // empty prompt = silent refresh if session still valid
         callback: async(tok)=>{
           if(tok.error){ resolve(false); return; }
@@ -2829,7 +2849,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Request token silently — prompt:'none' avoids showing the popup if already signed in
     google.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/spreadsheets',
+      scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
       prompt: '',   // empty string = use existing session if available, else show popup
       callback: async (tok) => {
         if (tok.error) {
