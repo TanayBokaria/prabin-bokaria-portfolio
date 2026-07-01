@@ -299,9 +299,11 @@
         style="resize:vertical;font-family:inherit;font-size:13px;padding:8px"></textarea>
     </div>
     <div class="modal-field" style="margin-top:12px">
-      <label class="modal-label">Attach files (screenshots, statements — any type, multiple ok)</label>
-      <input type="file" id="reportIssueFiles" multiple
+      <label class="modal-label">Attach files (screenshots, statements — any type)</label>
+      <div style="margin-top:6px;font-size:11px;color:var(--text-dim)">Tip: select multiple files at once (Ctrl/Cmd-click), or click Add Files repeatedly — each click adds to the list below.</div>
+      <input type="file" id="reportIssueFiles" multiple onchange="addReportIssueFiles(this.files)"
         style="margin-top:6px;font-size:12px;color:var(--text-muted)">
+      <div id="reportIssueFileList" style="margin-top:8px;display:flex;flex-direction:column;gap:4px"></div>
     </div>
     <div class="modal-actions" style="margin-top:16px">
       <button class="modal-btn primary" onclick="submitIssueReport()">Submit Report</button>
@@ -1583,10 +1585,48 @@ const DEFAULT_SHEET_ID='1qWrqbm5za6xfvVJK-VlwKgyUTSc6nYOyxwP8Plclk0I';
   const DASHBOARD_NAME='Prabin';
 const DEFAULT_CLIENT_ID='54722716336-puhqj8e67mf44jbi9unpm2lcgplos829.apps.googleusercontent.com';
 
+
+// ── Report Issue — accumulating file list (native file input replaces
+// selection on every reopen; this preserves files across multiple picks) ──
+let reportIssueFileStore = [];
+
+function addReportIssueFiles(fileList){
+  for(const f of fileList){
+    // Avoid exact duplicate (same name+size) if picked twice
+    if(!reportIssueFileStore.some(existing => existing.name===f.name && existing.size===f.size)){
+      reportIssueFileStore.push(f);
+    }
+  }
+  document.getElementById('reportIssueFiles').value = ''; // reset input so same file can be re-added if removed
+  renderReportIssueFileList();
+}
+
+function removeReportIssueFile(idx){
+  reportIssueFileStore.splice(idx,1);
+  renderReportIssueFileList();
+}
+
+function renderReportIssueFileList(){
+  const el = document.getElementById('reportIssueFileList');
+  if(!el) return;
+  if(reportIssueFileStore.length === 0){ el.innerHTML=''; return; }
+  el.innerHTML = reportIssueFileStore.map((f,i)=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:11px">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${f.name}</span>
+      <span style="color:var(--text-dim);margin:0 8px;flex-shrink:0">${(f.size/1024).toFixed(0)}KB</span>
+      <button onclick="removeReportIssueFile(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:0 4px;flex-shrink:0">✕</button>
+    </div>`).join('');
+}
+
+function resetReportIssueFiles(){
+  reportIssueFileStore = [];
+  renderReportIssueFileList();
+}
+
 // ── Report Issue (Layer 2) ────────────────────────────────────────────────────
 async function submitIssueReport() {
   const desc  = document.getElementById('reportIssueDesc').value.trim();
-  const files = document.getElementById('reportIssueFiles').files;
+  const files = reportIssueFileStore; // accumulated across multiple picker opens
   const statusEl = document.getElementById('reportIssueStatus');
 
   if (!desc) {
@@ -1731,6 +1771,7 @@ async function submitIssueReport() {
     setTimeout(() => {
       document.getElementById('reportIssueDesc').value = '';
       document.getElementById('reportIssueFiles').value = '';
+    resetReportIssueFiles();
       statusEl.style.display = 'none';
       closeModal('reportIssueModal');
     }, 3000);
@@ -1779,6 +1820,11 @@ function openModal(id){
     const ciEl = document.getElementById('clientIdInput');
     if(siEl && !siEl.value) siEl.value = sid;
     if(ciEl && !ciEl.value) ciEl.value = cid;
+  }
+  // Start Report Issue with a clean file list every time it's opened
+  // (guards against stale files lingering after a Cancel from a prior report)
+  if(id==='reportIssueModal' && typeof resetReportIssueFiles === 'function'){
+    resetReportIssueFiles();
   }
 }
 function closeModal(id){document.getElementById(id).classList.remove('visible');}
