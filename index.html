@@ -1705,13 +1705,18 @@ async function submitIssueReport() {
     statusEl.textContent = '✓ Issue logged to Sheet. (No files attached.)';
   }
 
-  // Reset form after short delay
-  setTimeout(() => {
-    document.getElementById('reportIssueDesc').value = '';
-    document.getElementById('reportIssueFiles').value = '';
-    statusEl.style.display = 'none';
-    closeModal('reportIssueModal');
-  }, 3000);
+  // Only auto-close on clean success — errors/warnings must stay visible until Priya dismisses them
+  const isCleanSuccess = !driveError && failedFiles.length === 0;
+  if (isCleanSuccess) {
+    setTimeout(() => {
+      document.getElementById('reportIssueDesc').value = '';
+      document.getElementById('reportIssueFiles').value = '';
+      statusEl.style.display = 'none';
+      closeModal('reportIssueModal');
+    }, 3000);
+  }
+  // On error/partial failure: form stays open, description/files preserved so nothing is lost,
+  // status message remains visible until she clicks Cancel or Submit again.
 }
 
 function loadSheetsConfig(){try{const s=localStorage.getItem(LS_KEY);if(s){sheetsConfig=JSON.parse(s);return true;}}catch(e){}return false;}
