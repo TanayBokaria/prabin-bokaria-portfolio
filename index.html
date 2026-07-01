@@ -2742,11 +2742,11 @@ async function exportToExcel(){
           ? Math.pow(currentValue / invested, 365 / holdingDays) - 1 : 0;
 
         const rowData = [
-          h.siNum || (typeof SI_MAP !== 'undefined' && SI_MAP[h.folio]) || h.id, // A Sl#
+          h.siNum || '',                  // A Sl# (blank until Priya's original SI# is captured — see note below)
           h.investor,                     // B Name of the Investor
           h.folio || '',                  // C Account No./Folio No.
           h.originalName || h.fund || '', // D Details of Investment
-          'Yes',                          // E Bank
+          h.bank || '',                   // E Bank (blank — bank name not currently tracked per holding)
           purchaseDate || '',             // F Purchase Date
           h.units != null ? h.units : '', // G Units
           h.navCost != null ? h.navCost : '', // H NAV on Purchase
