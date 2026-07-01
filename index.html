@@ -1604,9 +1604,13 @@ async function submitIssueReport() {
   let driveLink    = '';
 
   // ── Upload files to Google Drive if connected ──
+  let uploadedCount = 0;
+  let failedFiles = [];
+  let driveError = '';
+
   if (token && files.length > 0) {
     try {
-      // 1. Create a folder in Drive
+      // 1. Create a folder in Drive — check response status explicitly
       const folderRes = await fetch('https://www.googleapis.com/drive/v3/files', {
         method: 'POST',
         headers: {'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
@@ -1615,34 +1619,56 @@ async function submitIssueReport() {
           mimeType: 'application/vnd.google-apps.folder'
         })
       });
+      if (!folderRes.ok) {
+        const errBody = await folderRes.json().catch(()=>({}));
+        throw new Error(`Folder creation failed (HTTP ${folderRes.status}): ${errBody?.error?.message || 'unknown error'}`);
+      }
       const folder = await folderRes.json();
       const folderId = folder.id;
-      if (folderId) driveLink = `https://drive.google.com/drive/folders/${folderId}`;
+      if (!folderId) throw new Error('Folder creation returned no ID');
+      driveLink = `https://drive.google.com/drive/folders/${folderId}`;
 
-      // 2. Upload description as a text file
+      // 2. Upload description as a text file — check response status
       const descBlob = new Blob([`Issue Report\n${'='.repeat(60)}\nDashboard: ${DASHBOARD_NAME}\nTimestamp: ${timestamp}\n\n${desc}`], {type:'text/plain'});
       const descMeta = JSON.stringify({name:'description.txt', parents:[folderId]});
       const descForm = new FormData();
       descForm.append('metadata', new Blob([descMeta],{type:'application/json'}));
       descForm.append('file', descBlob);
-      await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      const descRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
         method:'POST', headers:{'Authorization':`Bearer ${token}`}, body:descForm
       });
+      if (!descRes.ok) console.warn('description.txt upload failed:', descRes.status);
 
-      // 3. Upload each attached file
+      // 3. Upload each attached file — check response status per file
       for (const file of files) {
         statusEl.textContent = `Uploading ${file.name}…`;
-        const meta = JSON.stringify({name:file.name, parents:[folderId]});
-        const form = new FormData();
-        form.append('metadata', new Blob([meta],{type:'application/json'}));
-        form.append('file', file);
-        await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-          method:'POST', headers:{'Authorization':`Bearer ${token}`}, body:form
-        });
+        try {
+          const meta = JSON.stringify({name:file.name, parents:[folderId]});
+          const form = new FormData();
+          form.append('metadata', new Blob([meta],{type:'application/json'}));
+          form.append('file', file);
+          const fileRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            method:'POST', headers:{'Authorization':`Bearer ${token}`}, body:form
+          });
+          if (fileRes.ok) {
+            uploadedCount++;
+          } else {
+            failedFiles.push(file.name);
+            console.warn(`Upload failed for ${file.name}: HTTP ${fileRes.status}`);
+          }
+        } catch(fe) {
+          failedFiles.push(file.name);
+          console.warn(`Upload exception for ${file.name}:`, fe.message);
+        }
       }
     } catch(de) {
       console.warn('Drive upload failed:', de.message);
-      statusEl.textContent = 'Drive upload failed — logging to Sheet only.';
+      driveError = de.message;
+      // Token likely expired/invalid — surface this clearly instead of a generic message
+      if (de.message.includes('401') || de.message.includes('403')) {
+        driveError = 'Google Drive connection expired — reconnect Sheets and try again.';
+      }
+      driveLink = '';
     }
   }
 
@@ -1650,7 +1676,7 @@ async function submitIssueReport() {
   const row = [
     timestamp, DASHBOARD_NAME, 'manual_report', '', '',
     desc.substring(0, 500),
-    `files:${files.length} | drive:${driveLink}`,
+    `files:${uploadedCount}/${files.length}${failedFiles.length ? ' (failed: '+failedFiles.join(',')+')' : ''} | drive:${driveLink}`,
     'Priya'
   ];
   if (sheetId && token) {
@@ -1665,10 +1691,19 @@ async function submitIssueReport() {
     } catch(se) { console.warn('error_log sheet write failed:', se.message); }
   }
 
-  statusEl.style.color = 'var(--green)';
-  statusEl.textContent = driveLink
-    ? `✓ Report submitted. Files saved to Drive. (${files.length} file${files.length!==1?'s':''})`
-    : '✓ Issue logged to Sheet. (Connect Sheets + Drive for file attachments.)';
+  if (driveError) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = `⚠ Issue logged to Sheet, but Drive upload failed: ${driveError}`;
+  } else if (files.length > 0 && failedFiles.length > 0) {
+    statusEl.style.color = 'var(--accent)';
+    statusEl.textContent = `⚠ ${uploadedCount}/${files.length} file(s) uploaded. Failed: ${failedFiles.join(', ')}. Issue logged to Sheet.`;
+  } else if (files.length > 0) {
+    statusEl.style.color = 'var(--green)';
+    statusEl.textContent = `✓ Report submitted. ${uploadedCount} file(s) saved to Drive.`;
+  } else {
+    statusEl.style.color = 'var(--green)';
+    statusEl.textContent = '✓ Issue logged to Sheet. (No files attached.)';
+  }
 
   // Reset form after short delay
   setTimeout(() => {
