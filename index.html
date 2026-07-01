@@ -359,6 +359,10 @@
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Add Fund
     </button>
+    <button class="refresh-btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-muted)" onclick="openModal('slNumModal')" title="Review/edit Priya's Sl# tracking numbers for each holding">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      Sl# Manager
+    </button>
     <button class="refresh-btn" style="background:var(--surface2);border:1px solid var(--accent);color:var(--accent)" onclick="document.getElementById('soaFileInput').click()" title="Upload a statement PDF to auto-update values">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       Upload Statement
@@ -579,6 +583,21 @@
 </main>
 
 <!-- ADD NEW FUND MODAL -->
+<div class="modal-overlay" id="slNumModal">
+  <div class="modal" style="width:720px;max-height:88vh;overflow-y:auto">
+    <h2>Sl# Manager</h2>
+    <p>Priya's original serial numbers from her master tracking sheet. 138 were pre-loaded from an earlier session; edit or add more below. Used in the Excel export's Sl# column instead of the dashboard's internal ID.</p>
+    <input class="modal-input" id="slNumSearch" placeholder="Search by fund name, investor, or folio…" style="margin-bottom:10px" oninput="renderSlNumList()">
+    <div id="slNumListCount" style="font-size:11px;color:var(--text-muted);margin-bottom:8px"></div>
+    <div id="slNumList" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px"></div>
+    <div id="slNumStatus" style="display:none;margin-top:10px;padding:9px 12px;border-radius:7px;font-size:12px;border:1px solid var(--border);background:var(--surface2)"></div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn-primary" onclick="saveSlNumbers()">Save All</button>
+      <button class="btn-secondary" onclick="closeModal('slNumModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="addFundModal">
   <div class="modal" style="width:600px;max-height:90vh;overflow-y:auto">
     <h2>Add New Fund</h2>
@@ -890,6 +909,7 @@ const SI_MAP = {
   '905225701654':262,'905225702135':263,'905225701854':264,'905225702105':265,
   '70543625093':1007,'70558013876':1038,'17992274':251
 };
+window.SI_MAP = SI_MAP; // bridge to the Sheet-backed Sl# Manager (see loadSIMap)
 
 const MEMBER_META = {
   'Prabin Bokaria':     {color:'#e8a838', short:'PrB', label:'Father'},
@@ -1623,6 +1643,113 @@ function resetReportIssueFiles(){
   renderReportIssueFileList();
 }
 
+
+// ── SI# (Priya's tracking number) — Sl# Manager ─────────────────────────────
+// NOTE: window.SI_MAP is aliased to the pre-existing hardcoded seed above.
+// loadSIMap() merges Sheet-loaded values ON TOP via Object.assign — it never
+// replaces the object, so the original 138 seeded entries are preserved
+// even if the si_map Sheet tab doesn't exist yet or is empty.
+
+async function loadSIMap(){
+  if(!sheetsConfig?.accessToken||!sheetsConfig?.sheetId) return;
+  try{
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/si_map!A2:B5000`;
+    const r=await fetchWithTimeout(url,{headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
+    if(!r.ok) return; // tab may not exist yet — seed values still apply
+    const data=await r.json();
+    const rows=data.values||[];
+    const overlay={};
+    rows.forEach(row=>{
+      const folio=String(row[0]||'').trim();
+      const sl=String(row[1]||'').trim();
+      if(folio && sl) overlay[folio]=sl;
+    });
+    Object.assign(window.SI_MAP, overlay);
+  }catch(e){ console.warn('loadSIMap failed:', e.message); }
+}
+
+function renderSlNumList(){
+  const el = document.getElementById('slNumList');
+  const countEl = document.getElementById('slNumListCount');
+  if(!el) return;
+  const q = (document.getElementById('slNumSearch')?.value||'').toLowerCase().trim();
+
+  const seen = new Set();
+  const items = portfolioData.filter(h=>{
+    if(!h.folio) return false;
+    if(seen.has(h.folio)) return false;
+    seen.add(h.folio);
+    return true;
+  }).filter(h=>{
+    if(!q) return true;
+    return (h.fund||'').toLowerCase().includes(q)
+        || (h.investor||'').toLowerCase().includes(q)
+        || (h.folio||'').toLowerCase().includes(q);
+  }).sort((a,b)=>(a.investor||'').localeCompare(b.investor||'') || (a.fund||'').localeCompare(b.fund||''));
+
+  countEl.textContent = `${items.length} holding${items.length!==1?'s':''} with a folio number`;
+
+  el.innerHTML = items.map(h=>{
+    const current = window.SI_MAP[h.folio] || '';
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.originalName||h.fund}</div>
+          <div style="font-size:10px;color:var(--text-muted)">${shortName ? shortName(h.investor) : h.investor} · ${h.folio}</div>
+        </div>
+        <input type="text" class="modal-input" data-folio="${h.folio.replace(/"/g,'&quot;')}"
+          value="${String(current).replace(/"/g,'&quot;')}" placeholder="Sl#"
+          style="width:90px;flex-shrink:0;padding:5px 8px;font-size:12px">
+      </div>`;
+  }).join('') || '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px">No holdings with a folio number match your search.</div>';
+}
+
+async function saveSlNumbers(){
+  const statusEl = document.getElementById('slNumStatus');
+  statusEl.style.display='block'; statusEl.style.color='var(--text-muted)';
+  statusEl.textContent='Saving…';
+
+  if(!sheetsConfig?.accessToken||!sheetsConfig?.sheetId){
+    statusEl.style.color='var(--red)';
+    statusEl.textContent='Sheets not connected — cannot save.';
+    return;
+  }
+
+  document.querySelectorAll('#slNumList input[data-folio]').forEach(inp=>{
+    const folio = inp.dataset.folio;
+    const val = inp.value.trim();
+    if(val) window.SI_MAP[folio]=val;
+    else delete window.SI_MAP[folio];
+  });
+
+  const rows = Object.entries(window.SI_MAP).map(([folio,sl])=>[folio, sl, 'Priya', fmtDate(new Date())]);
+
+  try{
+    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/si_map!A2:D5000:clear`;
+    await fetchWithTimeout(clearUrl, {method:'POST', headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
+
+    if(rows.length){
+      const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/si_map!A2?valueInputOption=USER_ENTERED`;
+      const wr = await fetchWithTimeout(writeUrl, {
+        method:'PUT',
+        headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`,'Content-Type':'application/json'},
+        body: JSON.stringify({values: rows})
+      });
+      if(!wr.ok){
+        const err = await wr.json().catch(()=>({}));
+        throw new Error(err?.error?.message || `HTTP ${wr.status}`);
+      }
+    }
+    statusEl.style.color='var(--green)';
+    statusEl.textContent=`✓ Saved ${rows.length} Sl# entr${rows.length!==1?'ies':'y'} to Google Sheets (includes the ${138} pre-loaded seed values plus any edits).`;
+    renderSlNumList();
+  }catch(e){
+    console.error('saveSlNumbers failed:', e);
+    statusEl.style.color='var(--red)';
+    statusEl.textContent='⚠ Save failed: ' + e.message + ' — if this is the first time, create a "si_map" tab in the Sheet with header row: Folio | Sl# | Updated By | Updated On';
+  }
+}
+
 // ── Report Issue (Layer 2) ────────────────────────────────────────────────────
 async function submitIssueReport() {
   const desc  = document.getElementById('reportIssueDesc').value.trim();
@@ -1826,6 +1953,10 @@ function openModal(id){
   if(id==='reportIssueModal' && typeof resetReportIssueFiles === 'function'){
     resetReportIssueFiles();
   }
+  if(id==='slNumModal'){
+    document.getElementById('slNumSearch').value='';
+    renderSlNumList();
+  }
 }
 function closeModal(id){document.getElementById(id).classList.remove('visible');}
 
@@ -1909,6 +2040,8 @@ async function loadFromSheets(){
         }
       }catch(e){ console.warn('Config tab read skipped:', e.message); }
     }
+    // Load Priya's Sl# tracking numbers (merges onto the pre-loaded seed)
+    await loadSIMap();
     // Load PMS/AIF value updates
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/pms_aif_values!A2:H500`;
     const r=await fetchWithTimeout(url,{headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
@@ -2742,7 +2875,7 @@ async function exportToExcel(){
           ? Math.pow(currentValue / invested, 365 / holdingDays) - 1 : 0;
 
         const rowData = [
-          h.siNum || '',                  // A Sl# (blank until Priya's original SI# is captured — see note below)
+          h.siNum || (window.SI_MAP && window.SI_MAP[h.folio]) || '', // A Sl# (from nf_si field or Sl# Manager, keyed by folio)
           h.investor,                     // B Name of the Investor
           h.folio || '',                  // C Account No./Folio No.
           h.originalName || h.fund || '', // D Details of Investment
