@@ -379,6 +379,88 @@
       .ai-panel-inner{padding:10px 12px 12px;}
     }
 
+  
+    /* ── AI FILE ATTACHMENT + DIFF ─────────────────────────────────────────── */
+    .ai-attach-btn{
+      background:var(--surface2);border:1px solid var(--border);
+      border-radius:8px;padding:8px 10px;cursor:pointer;font-size:14px;
+      color:var(--text-muted);flex-shrink:0;transition:border-color 0.15s;
+    }
+    .ai-attach-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .ai-attach-btn.has-files{border-color:var(--accent);color:var(--accent);}
+    .ai-file-chips{
+      display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;
+    }
+    .ai-file-chip{
+      display:flex;align-items:center;gap:5px;
+      background:var(--surface2);border:1px solid var(--border);
+      border-radius:12px;padding:3px 8px 3px 10px;font-size:11px;
+      color:var(--text-muted);max-width:200px;
+    }
+    .ai-file-chip span{
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+    .ai-file-chip button{
+      background:none;border:none;color:var(--text-dim);
+      cursor:pointer;padding:0 1px;font-size:12px;flex-shrink:0;
+      line-height:1;
+    }
+    .ai-file-chip button:hover{color:var(--red);}
+    /* Diff card */
+    .ai-diff-card{
+      background:var(--surface2);border:1px solid var(--border);
+      border-radius:10px;overflow:hidden;margin:4px 0;font-size:12px;
+    }
+    .ai-diff-header{
+      padding:8px 12px;font-size:10px;text-transform:uppercase;
+      letter-spacing:0.5px;font-weight:600;color:var(--text-muted);
+      border-bottom:1px solid var(--border);
+      display:flex;align-items:center;justify-content:space-between;
+    }
+    .ai-diff-section{border-bottom:1px solid var(--border);}
+    .ai-diff-section:last-child{border-bottom:none;}
+    .ai-diff-section-title{
+      padding:7px 12px;font-size:10px;font-weight:700;
+      text-transform:uppercase;letter-spacing:0.5px;
+    }
+    .ai-diff-section-title.dup{color:var(--text-dim);}
+    .ai-diff-section-title.upd{color:var(--accent);}
+    .ai-diff-section-title.new{color:var(--green);}
+    .ai-diff-row{
+      display:flex;align-items:flex-start;gap:8px;
+      padding:7px 12px;border-top:1px solid var(--border);
+    }
+    .ai-diff-row input[type=checkbox]{
+      flex-shrink:0;margin-top:2px;accent-color:var(--accent);
+    }
+    .ai-diff-row-body{flex:1;min-width:0;}
+    .ai-diff-fund{
+      font-weight:600;font-size:12px;color:var(--text);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    .ai-diff-meta{font-size:10px;color:var(--text-muted);margin-top:1px;}
+    .ai-diff-value{font-family:'DM Mono',monospace;font-size:11px;margin-top:3px;}
+    .ai-diff-old{color:var(--text-dim);text-decoration:line-through;}
+    .ai-diff-arrow{color:var(--text-dim);margin:0 4px;}
+    .ai-diff-new{color:var(--accent);}
+    .ai-diff-new.green{color:var(--green);}
+    .ai-diff-apply-row{
+      padding:10px 12px;display:flex;align-items:center;
+      justify-content:space-between;gap:8px;
+      border-top:1px solid var(--border);
+    }
+    .ai-diff-apply-btn{
+      background:var(--accent);border:none;border-radius:6px;
+      padding:6px 16px;font-size:12px;font-weight:600;
+      color:#1a1a2e;cursor:pointer;
+    }
+    .ai-diff-apply-btn:disabled{opacity:0.5;cursor:not-allowed;}
+    .ai-diff-cancel-btn{
+      background:none;border:1px solid var(--border);border-radius:6px;
+      padding:6px 12px;font-size:12px;color:var(--text-muted);cursor:pointer;
+    }
+    .ai-diff-status{font-size:11px;color:var(--text-muted);}
+
   </style>
 </head>
 <body>
@@ -506,9 +588,14 @@
     </div>
     <div class="ai-briefing" id="aiBriefing"></div>
     <div class="ai-thread" id="aiThread"></div>
+    <div id="aiFileChips" class="ai-file-chips" style="display:none"></div>
     <div class="ai-input-row">
+      <button class="ai-attach-btn" id="aiAttachBtn" title="Attach a file (Excel, PDF, CSV) to extract holdings"
+        onclick="document.getElementById('aiFileInput').click()">📎</button>
+      <input type="file" id="aiFileInput" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg"
+        multiple style="display:none" onchange="addAIFiles(this.files)">
       <input class="ai-input" id="aiInput"
-        placeholder="Ask anything or update a value — e.g. 'Update Prashant's Girik PMS to 2.35 Cr'"
+        placeholder="Ask anything, or attach a file to extract holdings…"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAIMessage();}">
       <button class="ai-send-btn" id="aiSendBtn" onclick="sendAIMessage()">Send</button>
     </div>
@@ -2197,6 +2284,530 @@ async function sendAIMessage(prefillText){
     inputEl?.focus();
   }
 }
+
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI FILE ATTACHMENT + DIFF ENGINE (Phase 1)
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _aiFiles = []; // accumulating file store for the AI bar
+
+// ── File accumulation ─────────────────────────────────────────────────────────
+function addAIFiles(fileList){
+  for(const f of fileList){
+    const supported = /\.(xlsx|xls|csv|pdf|png|jpg|jpeg)$/i.test(f.name);
+    if(!supported){
+      appendAIMsg('error', `⚠ <strong>${f.name}</strong> — unsupported file type. Please attach Excel (.xlsx/.xls), CSV, PDF, or an image.`);
+      continue;
+    }
+    if(!_aiFiles.some(x => x.name === f.name && x.size === f.size))
+      _aiFiles.push(f);
+  }
+  document.getElementById('aiFileInput').value = ''; // reset so same file can be re-added
+  renderAIFileChips();
+}
+
+function removeAIFile(idx){
+  _aiFiles.splice(idx, 1);
+  renderAIFileChips();
+}
+
+function clearAIFiles(){
+  _aiFiles = [];
+  renderAIFileChips();
+}
+
+function renderAIFileChips(){
+  const chips = document.getElementById('aiFileChips');
+  const btn   = document.getElementById('aiAttachBtn');
+  if(!chips) return;
+  if(_aiFiles.length === 0){
+    chips.style.display = 'none';
+    chips.innerHTML = '';
+    btn?.classList.remove('has-files');
+    return;
+  }
+  chips.style.display = 'flex';
+  btn?.classList.add('has-files');
+  chips.innerHTML = _aiFiles.map((f,i) => `
+    <div class="ai-file-chip">
+      <span title="${f.name}">${f.name}</span>
+      <button onclick="removeAIFile(${i})" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+// ── File reading ──────────────────────────────────────────────────────────────
+async function readFileAsText(file){
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if(ext === 'csv'){
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = e => res(e.target.result);
+      r.onerror = () => rej(new Error(`Could not read ${file.name}.`));
+      r.readAsText(file);
+    });
+  }
+
+  if(ext === 'xlsx' || ext === 'xls'){
+    const ExcelJS = window.ExcelJS || (typeof require !== 'undefined' ? require('exceljs') : null);
+    if(!ExcelJS) throw new Error('ExcelJS library not available — cannot read Excel files.');
+    const ab = await file.arrayBuffer();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(ab);
+    let text = '';
+    wb.worksheets.forEach(sheet => {
+      text += `\n=== Sheet: ${sheet.name} ===\n`;
+      sheet.eachRow((row) => {
+        const vals = [];
+        row.eachCell({ includeEmpty: false }, cell => {
+          const v = cell.value;
+          if(v !== null && v !== undefined){
+            vals.push(typeof v === 'object' && v.text ? v.text : String(v));
+          }
+        });
+        if(vals.length) text += vals.join('\t') + '\n';
+      });
+    });
+    if(!text.trim()) throw new Error(`${file.name} appears to be empty or unreadable.`);
+    return text;
+  }
+
+  if(ext === 'pdf'){
+    const pdfjsLib = window.pdfjsLib || window['pdfjs-dist/build/pdf'];
+    if(!pdfjsLib) throw new Error('PDF.js not available — cannot read PDF files.');
+    if(pdfjsLib.GlobalWorkerOptions)
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const ab = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+    let text = '';
+    for(let i = 1; i <= pdf.numPages; i++){
+      const page    = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(item => item.str).join(' ') + '\n';
+    }
+    if(!text.trim()) throw new Error(`${file.name}: no readable text found. If it's password-protected, unlock it first.`);
+    return text;
+  }
+
+  // Image: base64 encode for Gemini vision
+  if(/^(png|jpg|jpeg)$/.test(ext)){
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = e => res({ type: 'image', mimeType: file.type, base64: e.target.result.split(',')[1] });
+      r.onerror = () => rej(new Error(`Could not read ${file.name}.`));
+      r.readAsDataURL(file);
+    });
+  }
+
+  throw new Error(`${file.name}: file type not supported.`);
+}
+
+// ── Gemini extraction call ────────────────────────────────────────────────────
+async function extractHoldingsFromFile(fileContent, fileName, userMessage){
+  const keys = await loadGeminiKeys();
+  if(!keys || !keys.length) throw new Error('No Gemini API key configured. Add one in the Sheets config tab.');
+
+  const investors = [...new Set(portfolioData.map(h => h.investor))];
+  const systemPrompt = `You are extracting investment holdings from an uploaded file for the Bokaria family portfolio.
+
+KNOWN INVESTORS: ${investors.join(', ')}
+USER CONTEXT: "${userMessage}"
+
+Extract ALL investment holdings you can find. For each holding return this exact JSON shape:
+{
+  "investor": string,       // match to a known investor above, or infer from context
+  "fund_name": string,      // exact fund/asset name as in the file
+  "type": string,           // MF | PMS | AIF | NYSE | Other
+  "category": string,       // Equity | Debt | Hybrid | EQ-Debt Tax | Debt-Others | PMS | AIF | Other
+  "folio": string,          // folio/account/reference number, or "" if absent
+  "invested_value": number, // invested amount in rupees (convert lakhs/crores: 1L=100000, 1Cr=10000000)
+  "current_value": number,  // current value in rupees
+  "as_of_date": string,     // value date if present, else ""
+  "scheme_code": string     // AMFI code if present, else ""
+}
+
+Return ONLY valid JSON in this exact shape, no markdown, no explanation:
+{
+  "extracted_holdings": [...],
+  "confidence": "high" | "medium" | "low",
+  "notes": "brief description of what you found and any parsing issues"
+}
+If you cannot extract meaningful holdings, return:
+{"extracted_holdings":[],"confidence":"low","notes":"explain why"}`;
+
+  const key  = keys[_geminiKeyIdx % keys.length];
+  const url  = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`;
+
+  // Build content parts — text or image
+  let contentParts;
+  if(typeof fileContent === 'object' && fileContent.type === 'image'){
+    contentParts = [
+      { inline_data: { mime_type: fileContent.mimeType, data: fileContent.base64 } },
+      { text: `File: ${fileName}\n\n${userMessage}` }
+    ];
+  } else {
+    // Truncate very large files to avoid token overflow (~60k chars)
+    const truncated = typeof fileContent === 'string' && fileContent.length > 60000
+      ? fileContent.slice(0, 60000) + '\n[... file truncated for length ...]'
+      : fileContent;
+    contentParts = [{ text: `File: ${fileName}\n\n${truncated}\n\nUser message: ${userMessage}` }];
+  }
+
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: contentParts }],
+      generationConfig: { temperature: 0, maxOutputTokens: 3000, responseMimeType: 'application/json' }
+    })
+  });
+
+  if(!res.ok){
+    if(res.status === 429){ _geminiKeyIdx++; }
+    throw new Error(`Gemini API error ${res.status} — ${res.status === 429 ? 'rate limit hit, try again in a moment' : 'check your API key'}.`);
+  }
+
+  const data = await res.json();
+  let raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  raw = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+  const brace = raw.indexOf('{');
+  if(brace > 0) raw = raw.slice(brace);
+
+  try {
+    return JSON.parse(raw);
+  } catch(e) {
+    throw new Error(`Gemini returned unparseable output. Try again or use a cleaner file format.`);
+  }
+}
+
+// ── Diff engine ───────────────────────────────────────────────────────────────
+function computeAIDiff(extracted){
+  const result = { duplicate: [], update: [], newItems: [] };
+
+  for(const item of extracted){
+    // Normalise investor name
+    const invNorm = matchInvestorName ? matchInvestorName(item.investor) : item.investor;
+    const investor = invNorm || item.investor;
+
+    // Find matching holding in current portfolio
+    let match = null;
+    if(item.folio){
+      match = portfolioData.find(h =>
+        h.folio && h.folio.replace(/\s/g,'') === item.folio.replace(/\s/g,'') &&
+        (!invNorm || h.investor === invNorm)
+      );
+    }
+    if(!match && item.fund_name){
+      match = portfolioData.find(h => {
+        const nameMatch =
+          (h.fund || '').toLowerCase().includes(item.fund_name.toLowerCase().slice(0,20)) ||
+          (h.originalName || '').toLowerCase().includes(item.fund_name.toLowerCase().slice(0,20)) ||
+          item.fund_name.toLowerCase().includes((h.fund || '').toLowerCase().slice(0,20));
+        return nameMatch && (!invNorm || h.investor === invNorm);
+      });
+    }
+
+    if(!match){
+      result.newItems.push({ ...item, investor });
+      continue;
+    }
+
+    // Check if value is materially the same (within 0.5%)
+    const cv = item.current_value || 0;
+    const existing = match.currentValue || 0;
+    const diff = existing > 0 ? Math.abs(existing - cv) / existing : (cv > 0 ? 1 : 0);
+
+    if(diff < 0.005){
+      result.duplicate.push({ ...item, investor, _existing: match });
+    } else {
+      result.update.push({ ...item, investor, _existing: match, _proposedValue: cv });
+    }
+  }
+
+  return result;
+}
+
+// ── Render diff card in the AI thread ─────────────────────────────────────────
+function renderAIDiffCard(diff, fileName, extractionNotes){
+  const thread = document.getElementById('aiThread');
+  if(!thread) return;
+
+  const total = diff.duplicate.length + diff.update.length + diff.newItems.length;
+  if(total === 0){
+    appendAIMsg('ai', `📎 <strong>${fileName}</strong> — I couldn't find any investment holdings in this file. ${extractionNotes ? '<br><span style="color:var(--text-dim);font-size:11px">'+extractionNotes+'</span>' : 'Please check that the file contains portfolio data.'}`);
+    return;
+  }
+
+  const card = document.createElement('div');
+  card.className = 'ai-diff-card';
+
+  card.innerHTML = `
+    <div class="ai-diff-header">
+      <span>📎 ${fileName} — ${total} entr${total!==1?'ies':'y'} found</span>
+      ${extractionNotes ? `<span style="font-size:10px;color:var(--text-dim);font-style:italic">${extractionNotes}</span>` : ''}
+    </div>
+
+    ${diff.duplicate.length ? `
+    <div class="ai-diff-section">
+      <div class="ai-diff-section-title dup">✓ Already in dashboard (${diff.duplicate.length}) — same value</div>
+      ${diff.duplicate.map((item,i) => `
+        <div class="ai-diff-row" data-diff-type="dup" data-diff-idx="${i}">
+          <input type="checkbox" id="diff_dup_${i}" checked>
+          <div class="ai-diff-row-body">
+            <div class="ai-diff-fund">${item.fund_name}</div>
+            <div class="ai-diff-meta">${item.investor} · ${item.folio || item.type}</div>
+            <div class="ai-diff-value" style="color:var(--text-dim)">${fmtCr ? fmtCr(item.current_value) : '₹'+item.current_value?.toLocaleString('en-IN')}</div>
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    ${diff.update.length ? `
+    <div class="ai-diff-section">
+      <div class="ai-diff-section-title upd">↑ Value updates (${diff.update.length})</div>
+      ${diff.update.map((item,i) => `
+        <div class="ai-diff-row" data-diff-type="upd" data-diff-idx="${i}">
+          <input type="checkbox" id="diff_upd_${i}" checked>
+          <div class="ai-diff-row-body">
+            <div class="ai-diff-fund">${item._existing.originalName || item._existing.fund}</div>
+            <div class="ai-diff-meta">${item.investor} · ${item.folio || item._existing.folio || item.type}</div>
+            <div class="ai-diff-value">
+              <span class="ai-diff-old">${fmtCr ? fmtCr(item._existing.currentValue) : '₹'+(item._existing.currentValue||0).toLocaleString('en-IN')}</span>
+              <span class="ai-diff-arrow">→</span>
+              <span class="ai-diff-new">${fmtCr ? fmtCr(item._proposedValue) : '₹'+item._proposedValue.toLocaleString('en-IN')}</span>
+              ${item.as_of_date ? `<span style="color:var(--text-dim);font-size:10px;margin-left:6px">as of ${item.as_of_date}</span>` : ''}
+            </div>
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    ${diff.newItems.length ? `
+    <div class="ai-diff-section">
+      <div class="ai-diff-section-title new">+ New additions (${diff.newItems.length})</div>
+      ${diff.newItems.map((item,i) => `
+        <div class="ai-diff-row" data-diff-type="new" data-diff-idx="${i}">
+          <input type="checkbox" id="diff_new_${i}" checked>
+          <div class="ai-diff-row-body">
+            <div class="ai-diff-fund">${item.fund_name}</div>
+            <div class="ai-diff-meta">${item.investor} · <span class="tag tag-${item.type?.toLowerCase()||'mf'}" style="font-size:9px">${item.type||'MF'}</span></div>
+            <div class="ai-diff-value">
+              <span class="ai-diff-new green">${fmtCr ? fmtCr(item.current_value) : '₹'+(item.current_value||0).toLocaleString('en-IN')}</span>
+              ${item.invested_value && item.invested_value !== item.current_value
+                ? `<span style="color:var(--text-dim);font-size:10px;margin-left:6px">invested: ${fmtCr ? fmtCr(item.invested_value) : '₹'+item.invested_value.toLocaleString('en-IN')}</span>`
+                : ''}
+            </div>
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <div class="ai-diff-apply-row">
+      <span class="ai-diff-status" id="diffApplyStatus">Uncheck any rows you want to skip, then click Apply.</span>
+      <div style="display:flex;gap:8px">
+        <button class="ai-diff-cancel-btn" onclick="this.closest('.ai-diff-card').remove();appendAIMsg('ai','Cancelled — no changes made.')">Cancel</button>
+        <button class="ai-diff-apply-btn" onclick="applyAIDiff(this.closest('.ai-diff-card'),${JSON.stringify(JSON.stringify(diff))})">Apply Selected</button>
+      </div>
+    </div>`;
+
+  thread.appendChild(card);
+  thread.scrollTop = thread.scrollHeight;
+}
+
+// ── Apply confirmed changes ────────────────────────────────────────────────────
+async function applyAIDiff(cardEl, diffStr){
+  const diff = JSON.parse(diffStr);
+  const statusEl = cardEl.querySelector('#diffApplyStatus');
+  const applyBtn = cardEl.querySelector('.ai-diff-apply-btn');
+  applyBtn.disabled = true;
+
+  if(!sheetsConnected){
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '⚠ Sheets not connected — connect Sheets first, then apply.';
+    applyBtn.disabled = false;
+    return;
+  }
+
+  let applied = 0, failed = 0, skipped = 0;
+  const errors = [];
+
+  // Updates
+  for(const [i, item] of diff.update.entries()){
+    const chk = cardEl.querySelector(`#diff_upd_${i}`);
+    if(!chk?.checked){ skipped++; continue; }
+
+    const h = portfolioData.find(x =>
+      (x.folio && item._existing?.folio && x.folio === item._existing.folio) ||
+      (x.id && item._existing?.id && x.id === item._existing.id)
+    );
+    if(!h){ errors.push(`Could not find "${item.fund_name}" in portfolio.`); failed++; continue; }
+
+    statusEl.style.color = 'var(--text-muted)';
+    statusEl.textContent = `Saving ${item.fund_name}…`;
+
+    const oldVal = h.currentValue;
+    h.currentValue = item._proposedValue;
+    if(item.as_of_date) h.soaDate = item.as_of_date;
+
+    try{
+      await saveToSheets(h.id, h.invested, h.currentValue, h.soaDate || fmtDate(new Date()), 'AI File Import', '');
+      logError('ai_command_bar', 'file_import_update', {
+        investor: h.investor, fund: h.fund,
+        detail: `${fmtCr(oldVal)} → ${fmtCr(item._proposedValue)}`
+      });
+      applied++;
+    }catch(e){
+      h.currentValue = oldVal; // rollback in-memory
+      errors.push(`Failed to save "${item.fund_name}": ${e.message}`);
+      failed++;
+    }
+  }
+
+  // New items
+  for(const [i, item] of diff.newItems.entries()){
+    const chk = cardEl.querySelector(`#diff_new_${i}`);
+    if(!chk?.checked){ skipped++; continue; }
+
+    statusEl.style.color = 'var(--text-muted)';
+    statusEl.textContent = `Adding ${item.fund_name}…`;
+
+    const newId = portfolioData.length > 0 ? Math.max(...portfolioData.map(h => h.id)) + 1 : 1;
+    const newHolding = {
+      id: newId,
+      investor: item.investor,
+      fund: item.fund_name,
+      originalName: item.fund_name,
+      currentName: item.fund_name,
+      house: '',
+      folio: item.folio || '',
+      type: item.type || 'MF',
+      category: item.category || 'Equity',
+      invested: item.invested_value || 0,
+      currentValue: item.current_value || 0,
+      purchaseDate: '',
+      soaDate: item.as_of_date || fmtDate(new Date()),
+      schemeCode: item.scheme_code || null,
+      units: null, navCost: null, currentNav: null
+    };
+
+    try{
+      portfolioData.push(newHolding);
+      const saved = await saveNewHoldingToSheets(newHolding, 'Added via AI file import');
+      if(!saved){
+        portfolioData.pop();
+        throw new Error('Sheet write returned false');
+      }
+      logError('ai_command_bar', 'file_import_new', {
+        investor: newHolding.investor, fund: newHolding.fund,
+        detail: `Added via file import — ${fmtCr(newHolding.currentValue)}`
+      });
+      applied++;
+    }catch(e){
+      const idx = portfolioData.findIndex(h => h.id === newId);
+      if(idx >= 0) portfolioData.splice(idx, 1);
+      errors.push(`Failed to add "${item.fund_name}": ${e.message}`);
+      failed++;
+    }
+  }
+
+  // Duplicates: just count skipped (no write needed)
+  for(const [i] of diff.duplicate.entries()){
+    const chk = cardEl.querySelector(`#diff_dup_${i}`);
+    if(!chk?.checked) skipped++;
+    // duplicates with box checked = "confirmed same, no action" — don't write
+  }
+
+  // Re-render dashboard
+  if(applied > 0){
+    renderAll();
+    writePortfolioSnapshot();
+    lastRefreshed = new Date();
+  }
+
+  // Replace the apply row with a status summary
+  const applyRow = cardEl.querySelector('.ai-diff-apply-row');
+  if(errors.length > 0){
+    applyRow.innerHTML = `
+      <div style="width:100%">
+        <div style="color:var(--accent);font-size:12px;font-weight:600;margin-bottom:4px">
+          ✓ ${applied} applied · ${failed} failed · ${skipped} skipped
+        </div>
+        ${errors.map(e => `<div style="font-size:11px;color:var(--red);margin-top:2px">⚠ ${e}</div>`).join('')}
+      </div>`;
+  } else {
+    applyRow.innerHTML = `<div style="color:var(--green);font-size:12px;font-weight:600;width:100%">
+      ✓ Done — ${applied} change${applied!==1?'s':''} applied${skipped ? `, ${skipped} skipped` : ''}.
+    </div>`;
+  }
+}
+
+// ── Override sendAIMessage to detect file attachments ─────────────────────────
+const _origSendAIMessage = sendAIMessage;
+sendAIMessage = async function(prefillText){
+  // If files attached, route to extraction flow instead
+  if(_aiFiles.length > 0 || (prefillText === undefined && _aiFiles.length > 0)){
+    const inputEl = document.getElementById('aiInput');
+    const userText = (prefillText || inputEl?.value || '').trim();
+    const sendBtn = document.getElementById('aiSendBtn');
+
+    if(!_aiPanelOpen) toggleAIPanel();
+    if(inputEl) inputEl.value = '';
+    if(sendBtn) sendBtn.disabled = true;
+
+    const filesSnapshot = [..._aiFiles];
+    const displayNames = filesSnapshot.map(f => f.name).join(', ');
+    appendAIMsg('user', `📎 ${displayNames}${userText ? '<br>' + userText : ''}`);
+    clearAIFiles();
+
+    const thinkingEl = showAIThinking();
+    try{
+      // Read all files and process one by one
+      for(const file of filesSnapshot){
+        if(thinkingEl) thinkingEl.querySelector('.ai-bubble').innerHTML =
+          `<div class="ai-thinking">Reading <strong>${file.name}</strong>…<div class="ai-thinking-dots"><span></span><span></span><span></span></div></div>`;
+
+        let fileContent;
+        try{
+          fileContent = await readFileAsText(file);
+        }catch(readErr){
+          appendAIMsg('error', `⚠ <strong>${file.name}</strong> — ${readErr.message}`);
+          logError('ai_command_bar', readErr, {detail: `file read: ${file.name}`});
+          continue;
+        }
+
+        if(thinkingEl) thinkingEl.querySelector('.ai-bubble').innerHTML =
+          `<div class="ai-thinking">Extracting holdings from <strong>${file.name}</strong>…<div class="ai-thinking-dots"><span></span><span></span><span></span></div></div>`;
+
+        let extraction;
+        try{
+          extraction = await extractHoldingsFromFile(fileContent, file.name, userText);
+        }catch(extErr){
+          appendAIMsg('error', `⚠ <strong>${file.name}</strong> — ${extErr.message}`);
+          logError('ai_command_bar', extErr, {detail: `extraction: ${file.name}`});
+          continue;
+        }
+
+        if(!extraction.extracted_holdings || extraction.extracted_holdings.length === 0){
+          appendAIMsg('ai', `📎 <strong>${file.name}</strong> — No holdings found (${extraction.confidence} confidence).<br>
+            <span style="font-size:11px;color:var(--text-dim)">${extraction.notes || 'The file may not contain portfolio data in a recognisable format.'}</span>`);
+          continue;
+        }
+
+        // Run the diff
+        const diff = computeAIDiff(extraction.extracted_holdings);
+        renderAIDiffCard(diff, file.name, extraction.notes);
+      }
+    }finally{
+      if(thinkingEl) thinkingEl.remove();
+      if(sendBtn) sendBtn.disabled = false;
+      document.getElementById('aiInput')?.focus();
+    }
+    return;
+  }
+
+  // No files — fall through to original command bar behaviour
+  return _origSendAIMessage.call(this, prefillText);
+};
 
 
 // ── Report Issue (Layer 2) ────────────────────────────────────────────────────
