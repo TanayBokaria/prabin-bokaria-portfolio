@@ -1995,7 +1995,7 @@ function renderSlNumList(){
   countEl.textContent = `${items.length} holding${items.length!==1?'s':''} with a folio number`;
 
   el.innerHTML = items.map(h=>{
-    const current = window.SI_MAP[h.folio] || '';
+    const current = String(window.SI_MAP[h.folio] ?? '');
     return `
       <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border)">
         <div style="flex:1;min-width:0">
