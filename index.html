@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- build: 2026-07-03T08:00:12Z -->
+  <!-- build: 2026-07-03T17:05:28Z -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
 <title>Prabin Bokaria Family Portfolio</title>
@@ -619,7 +619,7 @@
     <div class="stat-card"><div class="stat-label">Total Invested</div><div class="stat-value" id="totalInvested">—</div><div class="stat-sub" style="color:var(--text-muted)">Across 44 holdings</div></div>
     <div class="stat-card teal"><div class="stat-label">Current Value</div><div class="stat-value" id="totalCurrent">—</div><div class="stat-sub" id="totalGainAmt">—</div></div>
     <div class="stat-card green"><div class="stat-label">Overall Return</div><div class="stat-value" id="totalReturn">—</div><div class="stat-sub" style="color:var(--text-muted)">Absolute since inception</div></div>
-    <div class="stat-card purple" style="cursor:pointer" onclick="showFreshDetail()" title="Click to see details"><div class="stat-label">Data Freshness</div><div class="stat-value" id="navCoverage">—</div><div class="stat-sub" id="sheetsSyncStatus" style="color:var(--text-muted)">Hit Refresh NAVs</div></div>
+    <div class="stat-card purple" style="cursor:pointer" onclick="showFreshDetail()" title="Click to see details"><div class="stat-label">Data Freshness</div><div class="stat-value" id="navCoverage">—</div><div class="stat-sub" id="sheetsSyncStatus" style="color:var(--text-muted)">Hit Refresh NAVs</div><div id="autoRefreshLine" style="font-size:10px;color:var(--text-muted);margin-top:3px;letter-spacing:0.2px"></div></div>
   </div>
 
   
@@ -1244,6 +1244,34 @@ let abActiveFilter = 'all';
 const _deletedIds = JSON.parse(localStorage.getItem('bokaria_prabin_deleted')||'[]');
 let portfolioData = PORTFOLIO.map(h=>({...h})).filter(h=>!_deletedIds.includes(h.id));
 let navFetchFailed = [];   // codes that failed during last refresh
+let autoRefreshStatus = null; // populated from Apps Script auto_refresh_status in config tab
+
+function renderAutoRefreshLine(){
+  const el = document.getElementById('autoRefreshLine');
+  if(!el) return;
+  const s = autoRefreshStatus;
+  if(!s){ el.textContent = ''; return; }
+  const parts = [];
+  try{
+    const nextRun = s.nextRun ? new Date(s.nextRun) : null;
+    const lastRun = s.lastRun ? new Date(s.lastRun) : null;
+    const now = new Date();
+    if(nextRun && nextRun > now){
+      const mins = Math.round((nextRun - now) / 60000);
+      const h = Math.floor(mins/60), m = mins%60;
+      parts.push('Auto ↻ in ' + (h>0?h+'h ':'') + m+'m');
+    }
+    if(lastRun){
+      const fmt = lastRun.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
+                + ' ' + lastRun.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
+      parts.push('last: '+fmt);
+    }
+    if(s.persistentCodes && s.persistentCodes.length > 0){
+      parts.push('\u26a0 '+s.persistentCodes.length+' code'+(s.persistentCodes.length>1?'s':'')+' failing');
+    }
+  }catch(e){}
+  el.textContent = parts.join(' \u00b7 ');
+}
 let navRenamed = [];       // {id, oldName, newName} updated during last refresh
 let navApiDown = false;    // true when circuit breaker trips (both sources down)
 let navFromFallback = [];  // codes that succeeded via mfdata.in fallback
@@ -3175,7 +3203,7 @@ async function loadFromSheets(){
     // Pre-load all Gemini keys from config tab
     if(!_geminiKeys){
       try{
-        const cfgUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/config!A1:B20`;
+        const cfgUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/config!A1:B30`;
         const cfgR = await fetchWithTimeout(cfgUrl, {headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
         if(cfgR.ok){
           const cfgData = await cfgR.json();
@@ -3198,7 +3226,20 @@ async function loadFromSheets(){
         }
       }catch(e){ console.warn('Config tab read skipped:', e.message); }
     }
-    // Load Priya's Sl# tracking numbers (merges onto the pre-loaded seed)
+    // Auto-refresh status from Apps Script (stored in config tab)
+    try{
+      const cfgUrl2 = `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/config!A1:B30`;
+      const cfgR2 = await fetchWithTimeout(cfgUrl2, {headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
+      if(cfgR2.ok){
+        const cfgData2 = await cfgR2.json();
+        const cfgRows2 = cfgData2.values || [];
+        const arRow = cfgRows2.find(r => (r[0]||'').toString().trim().toLowerCase() === 'auto_refresh_status');
+        if(arRow && arRow[1]){
+          try{ autoRefreshStatus = JSON.parse(arRow[1]); renderAutoRefreshLine(); }catch(e2){}
+        }
+      }
+    }catch(e){ /* config tab may not have auto_refresh_status yet */ }
+    // Load Priya's Sl# tracking numbers
     await loadSIMap();
     // Load PMS/AIF value updates
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/pms_aif_values!A2:H500`;
