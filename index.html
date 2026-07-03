@@ -1546,7 +1546,7 @@ async function refreshNAVs(){
 
   // 4. Write full portfolio snapshot to Sheets — only if NAVs actually loaded (don't overwrite good data with failed-refresh values)
   const navSuccessCount=codes.length-navFetchFailed.length;
-  if(sheetsConnected && navSuccessCount>0){
+  if(sheetsConnected && (navSuccessCount>0 || portfolioData.length>0)){
     document.getElementById('loadingText').textContent='Saving to Sheets';
     st.textContent='Saving snapshot to Google Sheets...';
     const _snapOk = await writePortfolioSnapshot();
@@ -1701,6 +1701,7 @@ async function fetchUSDINR(){
       document.getElementById('fxPill').style.color='var(--green)';
     }
   }catch(e){
+    logError('fetchUSDINR', e);
     // Fallback to a reasonable rate if API fails
     if(!usdInrRate) usdInrRate=84.5;
     const _fp2=document.getElementById('fxPill');if(_fp2)_fp2.textContent=`USD/INR: ₹${usdInrRate.toFixed(2)} (cached)`;
@@ -1834,7 +1835,7 @@ async function fetchStockPrice(symbol){
         }
       });
     }
-  }catch(e){console.error('Finnhub error',symbol,e);}
+  }catch(e){console.error('Finnhub error',symbol,e); logError('fetchStockPrice', e, {detail:`symbol=${symbol}`});}
 }
 
 function nyseTotal(filter){
@@ -1972,7 +1973,7 @@ async function loadSIMap(){
       if(folio && sl) overlay[folio]=sl;
     });
     Object.assign(window.SI_MAP, overlay);
-  }catch(e){ console.warn('loadSIMap failed:', e.message); }
+  }catch(e){ console.warn('loadSIMap failed:', e.message); logError('loadSIMap', e); }
 }
 
 function renderSlNumList(){
@@ -2052,6 +2053,7 @@ async function saveSlNumbers(){
     renderSlNumList();
   }catch(e){
     console.error('saveSlNumbers failed:', e);
+    logError('saveSlNumbers', e);
     statusEl.style.color='var(--red)';
     statusEl.textContent='⚠ Save failed: ' + e.message + ' — if this is the first time, create a "si_map" tab in the Sheet with header row: Folio | Sl# | Updated By | Updated On';
   }
@@ -2751,6 +2753,7 @@ async function applyAIDiff(cardEl, diffStr){
       });
       applied++;
     }catch(e){
+      logError('applyAIDiff', e, {fund: item.fund_name||'', investor: h.investor||'', detail:'update rollback'});
       h.currentValue = oldVal; // rollback in-memory
       errors.push(`Failed to save "${item.fund_name}": ${e.message}`);
       failed++;
@@ -2797,6 +2800,7 @@ async function applyAIDiff(cardEl, diffStr){
       });
       applied++;
     }catch(e){
+      logError('applyAIDiff', e, {fund: newHolding?.fund||'', investor: newHolding?.investor||'', detail:'new holding rollback'});
       const idx = portfolioData.findIndex(h => h.id === newId);
       if(idx >= 0) portfolioData.splice(idx, 1);
       errors.push(`Failed to add "${item.fund_name}": ${e.message}`);
@@ -3900,7 +3904,7 @@ async function saveNewHoldingToSheets(h, notes=''){
       return false;
     }
     return true;
-  }catch(e){console.error('saveNewHoldingToSheets exception:',e);return false;}
+  }catch(e){console.error('saveNewHoldingToSheets exception:',e); logError('saveNewHoldingToSheets', e); return false;}
 }
 
 async function logDeletionToSheets(h){
@@ -4438,6 +4442,7 @@ async function handleSOAUpload(event){
           }
         }catch(ge){
           console.warn('Gemini extraction failed:', ge.message);
+          logError('geminiSOAExtract', ge, {detail: file?.name||currentFileName||''});
           extracted = parseMFStatement(text, file.name);
           if(extracted.length > 0){
             extracted[0].aiFailure = true;
@@ -5609,6 +5614,7 @@ async function applySOACard(idx, state, matchedId){
 
   } catch(err){
     console.error('applySOACard error:', err);
+    logError('applySOACard', err, {fund: fname||'', investor: inv||'', detail: `state=${state} matchedId=${matchedId}`});
     if(applyBtn){
       applyBtn.disabled = false;
       applyBtn.innerHTML = state === 'update' ? 'Update Entry' : 'Add to Dashboard';
@@ -5683,6 +5689,7 @@ async function saveSinglePMSValue(h, value, invested, date){
     return true;
   }catch(e){
     console.error('saveSinglePMSValue error',e);
+    logError('saveSinglePMSValue', e);
     return false;
   }
 }
@@ -5745,6 +5752,7 @@ async function handleABUpload(event){
       const rows = await parseABFile(file);
       allParsed = allParsed.concat(rows);
     }catch(e){
+      logError('parseABFile', e, {detail: file.name});
       parseErrors.push({ file: file.name, msg: e.message });
     }
   }
@@ -6142,6 +6150,7 @@ async function commitABImport(rows){
 
   }catch(err){
     console.error('commitABImport error:', err);
+    logError('commitABImport', err, {detail: `${rows?.length||0} rows attempted`});
     // Restore buttons so Priya can retry
     if(importBtn){ importBtn.disabled = false; importBtn.innerHTML = 'Import to Dashboard'; }
     if(cancelBtn) cancelBtn.disabled = false;
@@ -6208,6 +6217,7 @@ async function saveABHoldingsToSheets(rows, asOf){
     return {ok:true};
   }catch(e){
     console.error('saveABHoldingsToSheets error:', e);
+    logError('saveABHoldingsToSheets', e);
     return {ok:false, reason: e.message||String(e)};
   }
 }
